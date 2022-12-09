@@ -1054,11 +1054,11 @@ CONTAINS
          my_rtp = rtp
          ! print the first time step if MO print required
          should_output = BTEST(cp_print_key_should_output(logger%iter_info, dft_section, &
-                                                       "PRINT%MO"), cp_p_file) & 
-                                                       .OR. (sim_step == 1)
-      ELSE 
+                                                          "PRINT%MO"), cp_p_file) &
+                         .OR. (sim_step == 1)
+      ELSE
          should_output = BTEST(cp_print_key_should_output(logger%iter_info, dft_section, &
-                                                       "PRINT%MO"), cp_p_file) .OR. my_final
+                                                          "PRINT%MO"), cp_p_file) .OR. my_final
       END IF
 
       IF ((.NOT. should_output) .OR. (.NOT. (print_eigvals .OR. print_eigvecs .OR. print_occup))) RETURN

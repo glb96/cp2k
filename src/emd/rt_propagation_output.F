@@ -25,7 +25,6 @@ MODULE rt_propagation_output
                                               cp_fm_get_info,&
                                               cp_fm_release,&
                                               cp_fm_set_all,&
-                                              cp_fm_to_fm,&
                                               cp_fm_type
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_io_unit,&
@@ -50,7 +49,6 @@ MODULE rt_propagation_output
                                               section_vals_type
    USE kahan_sum,                       ONLY: accurate_sum
    USE kinds,                           ONLY: default_path_length,&
-                                              default_string_length,&
                                               dp
    USE machine,                         ONLY: m_flush
    USE message_passing,                 ONLY: mp_max
@@ -75,11 +73,6 @@ MODULE rt_propagation_output
    USE qs_linres_current,               ONLY: calculate_jrho_resp
    USE qs_linres_types,                 ONLY: current_env_type
    USE qs_mo_io,                        ONLY: write_rt_mos_to_restart
-   USE qs_mo_types,                     ONLY: allocate_mo_set,&
-                                              deallocate_mo_set,&
-                                              get_mo_set,&
-                                              init_mo_set,&
-                                              mo_set_type
    USE qs_rho_types,                    ONLY: qs_rho_get,&
                                               qs_rho_type
    USE qs_scf_post_gpw,                 ONLY: qs_scf_post_moments,&
@@ -92,8 +85,8 @@ MODULE rt_propagation_output
    USE rt_propagation_types,            ONLY: get_rtp,&
                                               rt_prop_type
    USE rt_propagation_utils,            ONLY: calculate_P_imaginary,&
-                                              write_rtp_mos_to_output_unit,&
-                                              write_rtp_mo_cubes
+                                              write_rtp_mo_cubes,&
+                                              write_rtp_mos_to_output_unit
 #include "../base/base_uses.f90"
 
    IMPLICIT NONE
@@ -780,10 +773,12 @@ CONTAINS
 ! **************************************************************************************************
    SUBROUTINE write_available_results(qs_env, rtp)
       TYPE(qs_environment_type), POINTER                 :: qs_env
-      TYPE(qs_scf_env_type), POINTER                     :: scf_env
       TYPE(rt_prop_type), POINTER                        :: rtp
+
       CHARACTER(len=*), PARAMETER :: routineN = 'write_available_results'
+
       INTEGER                                            :: handle
+      TYPE(qs_scf_env_type), POINTER                     :: scf_env
 
       CALL timeset(routineN, handle)
 
@@ -794,8 +789,8 @@ CONTAINS
          CALL write_mo_free_results(qs_env)
          CALL write_mo_dependent_results(qs_env, scf_env)
          ! Time-dependent MO print
-         call write_rtp_mos_to_output_unit(qs_env, rtp)
-         call write_rtp_mo_cubes(qs_env, rtp)
+         CALL write_rtp_mos_to_output_unit(qs_env, rtp)
+         CALL write_rtp_mo_cubes(qs_env, rtp)
       END IF
 
       CALL timestop(handle)

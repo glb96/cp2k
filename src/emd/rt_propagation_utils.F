@@ -29,10 +29,10 @@ MODULE rt_propagation_utils
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_unit_nr,&
                                               cp_logger_type
-   USE cp_output_handling,              ONLY: cp_print_key_finished_output,&
-                                              cp_print_key_unit_nr,&
+   USE cp_output_handling,              ONLY: cp_p_file,&
+                                              cp_print_key_finished_output,&
                                               cp_print_key_should_output,&
-                                              cp_p_file
+                                              cp_print_key_unit_nr
    USE cp_para_types,                   ONLY: cp_para_env_type
    USE cp_realspace_grid_cube,          ONLY: cp_pw_to_cube
    USE dbcsr_api,                       ONLY: &
@@ -70,18 +70,17 @@ MODULE rt_propagation_utils
                                               REALSPACE,&
                                               RECIPROCALSPACE,&
                                               pw_type
+   USE qs_collocate_density,            ONLY: calculate_wavefunction
    USE qs_density_matrices,             ONLY: calculate_density_matrix
    USE qs_dftb_matrices,                ONLY: build_dftb_overlap
-   USE qs_collocate_density,            ONLY: calculate_wavefunction
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
    USE qs_kind_types,                   ONLY: qs_kind_type
    USE qs_ks_types,                     ONLY: qs_ks_did_change,&
                                               qs_ks_env_type
-   USE qs_mo_io,                        ONLY: write_rt_mos_to_restart,&
-                                              write_mo_set_to_output_unit,&
-                                              read_mo_set_from_restart,&
-                                              read_rt_mos_from_restart
+   USE qs_mo_io,                        ONLY: read_mo_set_from_restart,&
+                                              read_rt_mos_from_restart,&
+                                              write_mo_set_to_output_unit
    USE qs_mo_types,                     ONLY: allocate_mo_set,&
                                               deallocate_mo_set,&
                                               get_mo_set,&
@@ -544,7 +543,6 @@ CONTAINS
 
    END SUBROUTINE calculate_P_imaginary
 
-
 ! **************************************************************************************************
 !> \brief ...
 !> \param qs_env ...
@@ -553,7 +551,6 @@ CONTAINS
    SUBROUTINE write_rtp_mos_to_output_unit(qs_env, rtp)
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(rt_prop_type), POINTER                        :: rtp
-      TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_new
 
       CHARACTER(len=*), PARAMETER :: routineN = 'write_rtp_mos_to_output_unit'
 
@@ -564,12 +561,13 @@ CONTAINS
       LOGICAL                                            :: print_eigvecs, print_mo_info
       REAL(KIND=dp)                                      :: flexible_electron_count, maxocc, n_el_f
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
+      TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_new
+      TYPE(cp_logger_type), POINTER                      :: logger
       TYPE(mo_set_type)                                  :: mo_set_rtp
       TYPE(mo_set_type), DIMENSION(:), POINTER           :: mos
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(section_vals_type), POINTER                   :: dft_section, input
-      TYPE(cp_logger_type), POINTER                      :: logger
 
       NULLIFY (atomic_kind_set, particle_set, qs_kind_set, input, mos, dft_section)
 
@@ -585,17 +583,17 @@ CONTAINS
       dft_section => section_vals_get_subs_vals(input, "DFT")
       CALL section_vals_val_get(dft_section, "PRINT%MO%EIGENVECTORS", l_val=print_eigvecs)
 
-      NULLIFY(logger)
+      NULLIFY (logger)
       logger => cp_get_default_logger()
       print_mo_info = (cp_print_key_should_output(logger%iter_info, &
-                       dft_section, "PRINT%MO") /= 0) .OR. &
-                       (qs_env%sim_step == 1)
+                                                  dft_section, "PRINT%MO") /= 0) .OR. &
+                      (qs_env%sim_step == 1)
 
       IF ((.NOT. print_mo_info) .OR. (.NOT. print_eigvecs)) THEN
          CALL timestop(handle)
          RETURN
       END IF
-      
+
       CALL get_rtp(rtp=rtp, mos_new=mos_new)
 
       nspins = SIZE(mos_new)/2
@@ -648,44 +646,43 @@ CONTAINS
 !> \author Guillaume Le Breton (11.22)
 ! **************************************************************************************************
    SUBROUTINE write_rtp_mo_cubes(qs_env, rtp)
-      INTEGER                                            :: rt_time_step, ispin, nspins, &
-                                                            homo, nhomo, n_rep, &
-                                                            nlist, i, &
-                                                            handle, &
-                                                            ir, ivector, unit_nr
-      INTEGER, DIMENSION(:), POINTER                     :: list, list_index
-      LOGICAL                                            :: do_kpoints, append_cube, mpi_io
-      CHARACTER(LEN=*), PARAMETER                        :: routineN ='rt_write_mo_cubes'
-      CHARACTER(LEN=default_path_length)                 :: filename, my_pos_cube, title
       TYPE(qs_environment_type), POINTER                 :: qs_env
-      TYPE(qs_subsys_type), POINTER                      :: subsys
-      TYPE(mo_set_type), DIMENSION(:), POINTER           :: mos
       TYPE(rt_prop_type), POINTER                        :: rtp
+
+      CHARACTER(LEN=*), PARAMETER :: routineN = 'write_rtp_mo_cubes'
+
+      CHARACTER(LEN=default_path_length)                 :: filename, my_pos_cube, title
+      INTEGER                                            :: handle, homo, i, ir, ispin, ivector, &
+                                                            n_rep, nhomo, nlist, nspins, &
+                                                            rt_time_step, unit_nr
+      INTEGER, DIMENSION(:), POINTER                     :: list, list_index
+      LOGICAL                                            :: append_cube, do_kpoints, mpi_io
+      TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
+      TYPE(cell_type), POINTER                           :: cell
+      TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
       TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_new
       TYPE(cp_fm_type), POINTER                          :: mo_coeff
-      TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
-      TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
-      TYPE(cp_para_env_type), POINTER                    :: para_env
-      TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
-      TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
-      TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(cp_logger_type), POINTER                      :: logger
-      TYPE(section_vals_type), POINTER                   :: dft_section, input
-      TYPE(pw_env_type), POINTER                         :: pw_env
-      TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
-      TYPE(pw_pool_p_type), DIMENSION(:), POINTER        :: pw_pools
-      TYPE(pw_type)                                      :: wf_g, wf_r, density_r
-      TYPE(cell_type), POINTER                           :: cell
+      TYPE(cp_para_env_type), POINTER                    :: para_env
+      TYPE(dft_control_type), POINTER                    :: dft_control
+      TYPE(mo_set_type), DIMENSION(:), POINTER           :: mos
       TYPE(particle_list_type), POINTER                  :: particles
-
+      TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      TYPE(pw_env_type), POINTER                         :: pw_env
+      TYPE(pw_pool_p_type), DIMENSION(:), POINTER        :: pw_pools
+      TYPE(pw_pool_type), POINTER                        :: auxbas_pw_pool
+      TYPE(pw_type)                                      :: density_r, wf_g, wf_r
+      TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
+      TYPE(qs_subsys_type), POINTER                      :: subsys
+      TYPE(section_vals_type), POINTER                   :: dft_section, input
 
       CALL timeset(routineN, handle)
 
-      NULLIFY(logger, auxbas_pw_pool, pw_pools, pw_env)
+      NULLIFY (logger, auxbas_pw_pool, pw_pools, pw_env)
 
       ! Get all the info from qs:
       CALL get_qs_env(qs_env, do_kpoints=do_kpoints, &
-                    input=input)
+                      input=input)
 
       ! Kill the run in the case of K points
       IF (do_kpoints) THEN
@@ -697,39 +694,37 @@ CONTAINS
 
       ! Quick return if no print required
       IF (.NOT. BTEST(cp_print_key_should_output(logger%iter_info, dft_section, &
-                      "PRINT%MO_CUBES"), cp_p_file)) THEN
+                                                 "PRINT%MO_CUBES"), cp_p_file)) THEN
          CALL timestop(handle)
          RETURN
       END IF
 
-
       CALL get_qs_env(qs_env, atomic_kind_set=atomic_kind_set, &
-                    mos=mos, &
-                    blacs_env=blacs_env, &
-                    qs_kind_set=qs_kind_set, &
-                    pw_env=pw_env, &
-                    subsys=subsys, &
-                    para_env=para_env, &
-                    particle_set=particle_set, &
-                    dft_control=dft_control)
+                      mos=mos, &
+                      blacs_env=blacs_env, &
+                      qs_kind_set=qs_kind_set, &
+                      pw_env=pw_env, &
+                      subsys=subsys, &
+                      para_env=para_env, &
+                      particle_set=particle_set, &
+                      dft_control=dft_control)
       CALL qs_subsys_get(subsys, particles=particles)
-
 
       nspins = dft_control%nspins
       rt_time_step = qs_env%sim_step
 
       ! Setup the grids needed to compute a wavefunction given a vector
       CALL pw_env_get(pw_env, auxbas_pw_pool=auxbas_pw_pool, &
-                         pw_pools=pw_pools)
+                      pw_pools=pw_pools)
       CALL pw_pool_create_pw(auxbas_pw_pool, wf_r, &
-                                use_data=REALDATA3D, &
-                                in_space=REALSPACE)
+                             use_data=REALDATA3D, &
+                             in_space=REALSPACE)
       CALL pw_pool_create_pw(auxbas_pw_pool, wf_g, &
-                                use_data=COMPLEXDATA1D, &
-                                in_space=RECIPROCALSPACE)
+                             use_data=COMPLEXDATA1D, &
+                             in_space=RECIPROCALSPACE)
       CALL pw_pool_create_pw(auxbas_pw_pool, density_r, &
-                                use_data=REALDATA3D, &
-                                in_space=REALSPACE)
+                             use_data=REALDATA3D, &
+                             in_space=REALSPACE)
       CALL get_rtp(rtp=rtp, mos_new=mos_new)
 
       DO ispin = 1, nspins
@@ -776,7 +771,7 @@ CONTAINS
 
             ! density_r contains the density of the MOs
             CALL pw_zero(density_r)
-            mo_coeff => mos_new(2*ispin-1)!Real coeff
+            mo_coeff => mos_new(2*ispin - 1)!Real coeff
             CALL calculate_wavefunction(mo_coeff, ivector, wf_r, wf_g, atomic_kind_set, qs_kind_set, &
                                         cell, dft_control, particle_set, pw_env)
             ! Adding the real part
@@ -801,7 +796,7 @@ CONTAINS
          IF (ASSOCIATED(list_index)) DEALLOCATE (list_index)
       END DO
 
-     ! Deallocate grids needed to compute wavefunctions
+      ! Deallocate grids needed to compute wavefunctions
       CALL pw_pool_give_back_pw(auxbas_pw_pool, wf_r)
       CALL pw_pool_give_back_pw(auxbas_pw_pool, wf_g)
       CALL pw_pool_give_back_pw(auxbas_pw_pool, density_r)
