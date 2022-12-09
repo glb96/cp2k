@@ -203,6 +203,10 @@ CONTAINS
                                         "PRINT%PROGRAM_RUN_INFO")
 
       IF (rtp%converged) THEN
+         
+
+
+
          CALL make_moment(qs_env)
          dft_section => section_vals_get_subs_vals(input, "DFT")
          IF (rtp%linear_scaling) THEN
