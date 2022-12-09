@@ -254,7 +254,6 @@ CONTAINS
             END IF
             CALL write_rt_mos_to_restart(qs_env%mos, mos_new, particle_set, &
                                          dft_section, qs_kind_set)
-            CALL write_rtp_mos_to_output_unit(qs_env, mos_new)
          END IF
       END IF
 

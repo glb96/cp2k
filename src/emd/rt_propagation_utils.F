@@ -109,7 +109,7 @@ MODULE rt_propagation_utils
              calc_update_rho_sparse, &
              calculate_P_imaginary, &
              write_rtp_mos_to_output_unit, &
-             rt_write_mo_cubes
+             write_rtp_mo_cubes
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'rt_propagation_utils'
 
@@ -562,8 +562,7 @@ CONTAINS
       CHARACTER(LEN=2*default_string_length)             :: name
       INTEGER                                            :: handle, i, ispin, nao, nelectron, nmo, &
                                                             nspins
-      LOGICAL                                            ::
-      print_eigvecs,print_mo_info
+      LOGICAL                                            :: print_eigvecs, print_mo_info
       REAL(KIND=dp)                                      :: flexible_electron_count, maxocc, n_el_f
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(mo_set_type)                                  :: mo_set_rtp
@@ -599,7 +598,7 @@ CONTAINS
          RETURN
       END IF
 
-      get_rtp(rtp=rtp, mos_new=mos_new)
+      CALL get_rtp(rtp=rtp, mos_new=mos_new)
 
       nspins = SIZE(mos_new)/2
 
@@ -664,7 +663,7 @@ CONTAINS
       TYPE(qs_subsys_type), POINTER                      :: subsys
       TYPE(mo_set_type), DIMENSION(:), POINTER           :: mos
       TYPE(rt_prop_type), POINTER                        :: rtp
-      TYPE(cp_fm_p_type), DIMENSION(:), POINTER          :: mos_new
+      TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_new
       TYPE(cp_fm_type), POINTER                          :: mo_coeff
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(cp_blacs_env_type), POINTER                   :: blacs_env
@@ -779,13 +778,13 @@ CONTAINS
 
             ! density_r contains the density of the MOs
             CALL pw_zero(density_r)
-            mo_coeff => mos_new(2*ispin-1)%matrix !Real coeff
+            mo_coeff => mos_new(2*ispin-1)!Real coeff
             CALL calculate_wavefunction(mo_coeff, ivector, wf_r, wf_g, atomic_kind_set, qs_kind_set, &
                                         cell, dft_control, particle_set, pw_env)
             ! Adding the real part
             CALL pw_multiply(density_r, wf_r, wf_r, 1.0_dp)
 
-            mo_coeff => mos_new(2*ispin)%matrix !Im coeff
+            mo_coeff => mos_new(2*ispin) !Im coeff
             CALL calculate_wavefunction(mo_coeff, ivector, wf_r, wf_g, atomic_kind_set, qs_kind_set, &
                                         cell, dft_control, particle_set, pw_env)
             ! Adding the im part
@@ -806,6 +805,6 @@ CONTAINS
 
       CALL timestop(handle)
 
-   END SUBROUTINE rt_write_mo_cubes
+   END SUBROUTINE write_rtp_mo_cubes
 
 END MODULE rt_propagation_utils
