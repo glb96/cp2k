@@ -803,6 +803,11 @@ CONTAINS
          IF (ASSOCIATED(list_index)) DEALLOCATE (list_index)
       END DO
 
+     ! Deallocate grids needed to compute wavefunctions
+      CALL pw_pool_give_back_pw(auxbas_pw_pool, wf_r)
+      CALL pw_pool_give_back_pw(auxbas_pw_pool, wf_g)
+      CALL pw_pool_give_back_pw(auxbas_pw_pool, density_r)
+
       CALL timestop(handle)
 
    END SUBROUTINE write_rtp_mo_cubes

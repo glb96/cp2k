@@ -1044,9 +1044,6 @@ CONTAINS
       ! Do we print the final MO information after SCF convergence is reached (default: no)
       IF (PRESENT(final_mos)) THEN
          my_final = final_mos
-      ! IF Real-Time propagation, print the first time step if MO print required
-      ELSE IF (PRESENT(rtp) .AND. sim_step == 1) THEN
-         my_final = .TRUE. 
       ELSE
          my_final = .FALSE.
       END IF
@@ -1055,6 +1052,10 @@ CONTAINS
       my_rtp = .FALSE.
       IF (PRESENT(rtp)) THEN
          my_rtp = rtp
+         ! pprint the first time step if MO print required
+         IF (sim_step == 1) THEN
+            my_final = .TRUE.
+         END IF
       END IF
 
       should_output = BTEST(cp_print_key_should_output(logger%iter_info, dft_section, &
