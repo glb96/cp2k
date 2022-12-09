@@ -23,7 +23,6 @@ MODULE rt_propagation_output
                                               cp_fm_struct_type
    USE cp_fm_types,                     ONLY: cp_fm_create,&
                                               cp_fm_get_info,&
-                                              cp_fm_p_type,&
                                               cp_fm_release,&
                                               cp_fm_set_all,&
                                               cp_fm_to_fm,&
@@ -37,7 +36,6 @@ MODULE rt_propagation_output
                                               cp_print_key_finished_output,&
                                               cp_print_key_should_output,&
                                               cp_print_key_unit_nr
-   USE cp_para_types,                   ONLY: cp_para_env_type                                           
    USE cp_realspace_grid_cube,          ONLY: cp_pw_to_cube
    USE dbcsr_api,                       ONLY: &
         dbcsr_add, dbcsr_binary_write, dbcsr_checksum, dbcsr_copy, dbcsr_create, &
@@ -49,7 +47,6 @@ MODULE rt_propagation_output
                                               real_time_propagation
    USE input_section_types,             ONLY: section_get_ivals,&
                                               section_vals_get_subs_vals,&
-                                              section_vals_val_get,&
                                               section_vals_type
    USE kahan_sum,                       ONLY: accurate_sum
    USE kinds,                           ONLY: default_path_length,&
@@ -798,7 +795,7 @@ CONTAINS
          CALL write_mo_dependent_results(qs_env, scf_env)
          ! Time-dependent MO print
          call write_rtp_mos_to_output_unit(qs_env, rtp)
-         call write_rtp_mo_cubes(qs_env, rtp) ! In dev
+         call write_rtp_mo_cubes(qs_env, rtp)
       END IF
 
       CALL timestop(handle)
