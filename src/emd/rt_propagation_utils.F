@@ -582,7 +582,6 @@ CONTAINS
                       particle_set=particle_set, &
                       input=input, &
                       mos=mos)
-
       ! Quick return, if no printout of MO information is requested
       dft_section => section_vals_get_subs_vals(input, "DFT")
       CALL section_vals_val_get(dft_section, "PRINT%MO%EIGENVECTORS", l_val=print_eigvecs)
@@ -597,7 +596,7 @@ CONTAINS
          CALL timestop(handle)
          RETURN
       END IF
-
+      
       CALL get_rtp(rtp=rtp, mos_new=mos_new)
 
       nspins = SIZE(mos_new)/2
