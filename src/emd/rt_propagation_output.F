@@ -13,6 +13,7 @@
 MODULE rt_propagation_output
    USE atomic_kind_types,               ONLY: atomic_kind_type
    USE cp_control_types,                ONLY: dft_control_type
+   USE cp_dbcsr_cp2k_link,              ONLY: cp_dbcsr_alloc_block_from_nbl
    USE cp_dbcsr_operations,             ONLY: cp_dbcsr_sm_fm_multiply,&
                                               dbcsr_allocate_matrix_set,&
                                               dbcsr_deallocate_matrix_set
@@ -41,7 +42,7 @@ MODULE rt_propagation_output
         dbcsr_deallocate_matrix, dbcsr_desymmetrize, dbcsr_filter, dbcsr_get_info, &
         dbcsr_get_occupation, dbcsr_init_p, dbcsr_iterator_blocks_left, dbcsr_iterator_next_block, &
         dbcsr_iterator_start, dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_p_type, dbcsr_scale, &
-        dbcsr_set, dbcsr_type
+        dbcsr_set, dbcsr_type, dbcsr_type_antisymmetric,dbcsr_dot
    USE input_constants,                 ONLY: ehrenfest,&
                                               real_time_propagation
    USE input_section_types,             ONLY: section_get_ivals,&
@@ -74,6 +75,8 @@ MODULE rt_propagation_output
    USE qs_linres_current,               ONLY: calculate_jrho_resp
    USE qs_linres_types,                 ONLY: current_env_type
    USE qs_mo_io,                        ONLY: write_rt_mos_to_restart
+   USE qs_neighbor_list_types,          ONLY: neighbor_list_set_p_type
+   USE qs_operators_ao,                 ONLY: build_lin_mom_matrix
    USE qs_rho_types,                    ONLY: qs_rho_get,&
                                               qs_rho_type
    USE qs_scf_post_gpw,                 ONLY: qs_scf_post_moments,&
@@ -202,6 +205,9 @@ CONTAINS
          CALL make_moment(qs_env)
          IF (.NOT. dft_control%qs_control%dftb) THEN
             CALL write_available_results(qs_env=qs_env, rtp=rtp)
+         END IF
+         IF (.TRUE.) THEN
+            CALL rt_total_current(qs_env=qs_env)
          END IF
          dft_section => section_vals_get_subs_vals(input, "DFT")
          IF (rtp%linear_scaling) THEN
@@ -661,6 +667,97 @@ CONTAINS
       CALL timestop(handle)
 
    END SUBROUTINE write_rt_p_to_restart
+
+
+! **************************************************************************************************
+!> \brief Compute the total current depending on the gauge used
+!> \param qs_env ...
+!> \param rtp ...
+!> \author Guillaume Le Breton (01.22)
+! **************************************************************************************************
+
+   SUBROUTINE rt_total_current(qs_env)
+
+      TYPE(qs_environment_type), POINTER                 :: qs_env
+      REAL(dp), ALLOCATABLE, DIMENSION(:, :)             :: total_current
+      INTEGER                                            :: idir, ispin, i
+      LOGICAL                                            :: ossef
+      REAL(dp)                                           :: strace, trace
+      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: momentum, rho_ao
+      TYPE(dft_control_type), POINTER                    :: dft_control
+      TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_s
+      TYPE(neighbor_list_set_p_type), DIMENSION(:), &
+         POINTER                                         :: sab_orb
+      TYPE(qs_rho_type), POINTER                         :: rho
+
+
+      NULLIFY (dft_control, matrix_s, sab_orb, rho)
+
+      CALL get_qs_env(qs_env, &
+                      rho=rho, &
+                      dft_control=dft_control, &
+                      sab_orb=sab_orb, & 
+                      matrix_s_kp=matrix_s)
+      CALL qs_rho_get(rho, rho_ao=rho_ao)
+      !ppnl_present = ASSOCIATED(sap_ppnl)
+
+      ALLOCATE (total_current(dft_control%nspins, 3))
+      total_current = 0.0_dp
+      
+      ! Gauge-independent part: 
+      NULLIFY (momentum)
+      CALL dbcsr_allocate_matrix_set(momentum, 3)
+      DO idir = 1, 3
+         CALL dbcsr_init_p(momentum(idir)%matrix)
+         CALL dbcsr_create(momentum(idir)%matrix, template=matrix_s(1, 1)%matrix, &
+                           matrix_type=dbcsr_type_antisymmetric)
+         CALL cp_dbcsr_alloc_block_from_nbl(momentum(idir)%matrix, sab_orb)
+         CALL dbcsr_set(momentum(idir)%matrix, 0.0_dp)
+      END DO
+      CALL build_lin_mom_matrix(qs_env, momentum)
+
+
+      trace = 0.0_dp
+      DO idir = 1, 3
+         strace = 0._dp
+         DO ispin = 1, dft_control%nspins
+            CALL dbcsr_dot(rho_ao(ispin)%matrix, momentum(idir)%matrix, trace)
+            strace = strace + trace
+         END DO
+         total_current(idir, 1) = strace
+      END DO
+      CALL dbcsr_deallocate_matrix_set(momentum)
+
+      ! Extra term if velocity gauge with non-zero vector potential 
+      IF (dft_control%rtp_control%velocity_gauge) THEN
+         ! IF vector potential != 0:
+         ossef = .TRUE.
+      END IF
+         
+      ! Extra term for non-local term? 
+
+      ! Print the current as dipole moment
+      WRITE (*, *)  (total_current(i, 3), i=1, 3)
+      !CALL print_total_current(qs_env, total_current)
+
+   END SUBROUTINE rt_total_current
+
+
+! **************************************************************************************************
+!> \brief Print the current
+!> \param qs_env ...
+!> \param total_current ...
+!> \author Guillaume Le Breton (01.22)
+! **************************************************************************************************
+!   SUBROUTINE print_total_current(qs_env, total_current)
+!      
+!      TYPE(qs_environment_type), POINTER                 :: qs_env
+!      REAL(dp), ALLOCATABLE, DIMENSION(:, :)             :: total_current
+!      
+!      WRITE (unit_number, "(T5,3(A,A,E16.8,1X),T64,A,T71,F14.8)") &
+!                  (TRIM(rlab(i)), "=", rmom(i, 3)*debye, i=2, 4), "Total=", dd
+!
+!   END SUBROUTINE print_total_current
 
 ! **************************************************************************************************
 !> \brief Collocation of the current and printing of it in a cube file
