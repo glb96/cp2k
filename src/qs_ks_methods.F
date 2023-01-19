@@ -657,7 +657,7 @@ CONTAINS
                CALL integrate_v_core_rspace(v_hartree_rspace, qs_env)
             END IF
          END IF
-
+         WRITE(*, *) 'c est pas bon'
          IF (.NOT. do_hfx) THEN
             ! Initialize the Kohn-Sham matrix with the core Hamiltonian matrix
             ! (sets ks sparsity equal to matrix_h sparsity)
@@ -668,6 +668,7 @@ CONTAINS
                END DO
             END DO
             ! imaginary part if required
+            WRITE(*, *) 'ok j avais tord lol'
             IF (qs_env%run_rtp) THEN
                IF (dft_control%rtp_control%velocity_gauge) THEN
                   CPASSERT(ASSOCIATED(matrix_h_im))
