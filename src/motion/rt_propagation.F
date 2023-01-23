@@ -158,11 +158,7 @@ CONTAINS
       CALL section_vals_val_get(print_moments_section, "VEL_REPRS", l_val=vel_reprs)
       rtp%track_imag_density = magnetic .OR. vel_reprs .OR. rtp_control%velocity_gauge & 
          .OR. rtp%do_hfx .OR. (.NOT. rtp_control%fixed_ions)
-      !GLB! to be changed: 
-      !IF (rtp_control%velocity_gauge) THEN
-      !   rtp%do_hfx = .TRUE.
-      !END IF
-      !GLB: to be changed!
+      
       ! Hmm, not really like to initialize with the structure of S but I reckon it is
       ! done everywhere like this
       IF (rtp%track_imag_density) CALL rtp_hfx_rebuild(qs_env)
