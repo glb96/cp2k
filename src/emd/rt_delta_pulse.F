@@ -52,6 +52,12 @@ MODULE rt_delta_pulse
         dbcsr_add, dbcsr_copy, dbcsr_create, dbcsr_deallocate_matrix, dbcsr_get_info, &
         dbcsr_init_p, dbcsr_p_type, dbcsr_set, dbcsr_type, dbcsr_type_antisymmetric, &
         dbcsr_type_symmetric
+   
+   USE input_constants,                 ONLY: real_time_propagation,&
+                                              use_restart_wfn,&
+                                              use_rt_restart,&
+                                              use_scf_wfn
+
    USE input_section_types,             ONLY: section_get_ival,&
                                               section_get_lval,&
                                               section_vals_type,&
@@ -63,6 +69,7 @@ MODULE rt_delta_pulse
    USE moments_utils,                   ONLY: get_reference_point
    USE parallel_gemm_api,               ONLY: parallel_gemm
    USE particle_types,                  ONLY: particle_type
+   USE qs_dftb_matrices,                ONLY: build_dftb_overlap
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
    USE qs_kind_types,                   ONLY: qs_kind_type
@@ -72,7 +79,8 @@ MODULE rt_delta_pulse
                                               build_local_magmom_matrix,&
                                               build_local_moment_matrix
    USE qs_neighbor_list_types,          ONLY: neighbor_list_set_p_type
-   USE rt_propagation_types,            ONLY: rt_prop_type
+   USE rt_propagation_types,            ONLY: get_rtp,&
+                                              rt_prop_type
 #include "../base/base_uses.f90"
 
    IMPLICIT NONE
@@ -81,11 +89,77 @@ MODULE rt_delta_pulse
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'rt_delta_pulse'
 
-   PUBLIC :: apply_delta_pulse_periodic, &
-             apply_delta_pulse, &
-             apply_delta_pulse_mag
+   PUBLIC :: apply_delta_pulse
 
 CONTAINS
+
+
+
+
+! **************************************************************************************************
+!> \brief Interface to call the delta pulse depending on the type of
+!>        calculation. 
+!> \param qs_env ...
+!> \param mos_old ...
+!> \param mos_new ...
+!> \author Update: Guillaume Le Breton (2023.01)
+! **************************************************************************************************
+
+   SUBROUTINE apply_delta_pulse(qs_env, rtp, rtp_control)
+      TYPE(qs_environment_type), POINTER                 :: qs_env
+      TYPE(rt_prop_type), POINTER                        :: rtp
+      TYPE(mo_set_type), DIMENSION(:), POINTER           :: mos
+      TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_old, mos_new
+      TYPE(rtp_control_type), POINTER                    :: rtp_control    
+      LOGICAL                                            :: apply_pulse, periodic_cell
+      TYPE(cell_type), POINTER                           :: cell
+      TYPE(dft_control_type), POINTER                    :: dft_control
+      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_s
+
+
+      CALL get_qs_env(qs_env, &
+                      cell=cell, &
+                      dft_control=dft_control, &
+                      matrix_s=matrix_s)
+      periodic_cell = ANY(cell%perd > 0)
+      
+      apply_pulse = .TRUE. 
+      IF (.NOT. rtp%linear_scaling) THEN       
+         CALL get_qs_env(qs_env, mos=mos)
+         IF ((rtp%linear_scaling) .AND. (.NOT. ASSOCIATED(mos))) THEN
+            CALL cp_warn(__LOCATION__, "Delta Pulse not implemented for Linear-Scaling based ground "//& 
+               "state calculation. If you want to perform a Linear-Scaling RTP from a "//& 
+               "Linear-Scaling GS calculation, restart a GS calculation using an MO-based method "//&
+               "from the results of your previous Linear-Scaling GS calculation "//&
+               "(for 1 SCF loop for instance).")
+            apply_pulse = .FALSE.
+         END IF
+         
+         IF (apply_pulse) THEN
+            CALL get_rtp(rtp=rtp, mos_old=mos_old, mos_new=mos_new)
+            IF (rtp_control%apply_delta_pulse) THEN
+               IF (dft_control%qs_control%dftb) &
+                  CALL build_dftb_overlap(qs_env, 1, matrix_s)
+               IF (rtp_control%periodic) THEN
+                  CALL apply_delta_pulse_electric_periodic(qs_env, mos_old, mos_new)
+               ELSE
+                  IF (periodic_cell) THEN
+                     CPWARN("This application of the delta pulse is not compatible with PBC!")
+                  END IF
+                  CALL apply_delta_pulse_electric(qs_env, mos_old, mos_new)
+               END IF
+            ELSE IF (rtp_control%apply_delta_pulse_mag) THEN
+               IF (periodic_cell) THEN
+                  CPWARN("This application of the delta pulse is not compatible with PBC!")
+               END IF
+               CALL apply_delta_pulse_mag(qs_env, mos_old, mos_new)
+            ELSE
+               CPABORT("Code error: this case should not happend!")
+            END IF
+         END IF
+      END IF
+
+   END SUBROUTINE apply_delta_pulse
 
 ! **************************************************************************************************
 !> \brief uses perturbation theory to get the proper initial conditions
@@ -96,11 +170,11 @@ CONTAINS
 !> \author Joost & Martin (2011)
 ! **************************************************************************************************
 
-   SUBROUTINE apply_delta_pulse_periodic(qs_env, mos_old, mos_new)
+   SUBROUTINE apply_delta_pulse_electric_periodic(qs_env, mos_old, mos_new)
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_old, mos_new
 
-      CHARACTER(len=*), PARAMETER :: routineN = 'apply_delta_pulse_periodic'
+      CHARACTER(len=*), PARAMETER :: routineN ='apply_delta_pulse_electric_periodic'
 
       INTEGER                                            :: handle, icol, idir, irow, ispin, nao, &
                                                             ncol_local, nmo, nrow_local, nvirt, &
@@ -302,7 +376,7 @@ CONTAINS
 
       CALL timestop(handle)
 
-   END SUBROUTINE apply_delta_pulse_periodic
+   END SUBROUTINE apply_delta_pulse_electric_periodic
 
 ! **************************************************************************************************
 !> \brief applies exp(ikr) to the wavefunction.... stored in mos_old...
@@ -312,11 +386,11 @@ CONTAINS
 !> \author Joost & Martin (2011)
 ! **************************************************************************************************
 
-   SUBROUTINE apply_delta_pulse(qs_env, mos_old, mos_new)
+   SUBROUTINE apply_delta_pulse_electric(qs_env, mos_old, mos_new)
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_old, mos_new
 
-      CHARACTER(len=*), PARAMETER                        :: routineN = 'apply_delta_pulse'
+      CHARACTER(len=*), PARAMETER                        :: routineN ='apply_delta_pulse_electric'
 
       INTEGER                                            :: handle, i, nao, nmo
       REAL(KIND=dp), DIMENSION(3)                        :: kvec
@@ -382,7 +456,7 @@ CONTAINS
 
       CALL timestop(handle)
 
-   END SUBROUTINE apply_delta_pulse
+   END SUBROUTINE apply_delta_pulse_electric
 
 ! **************************************************************************************************
 !> \brief apply magnetic delta pulse to linear order
