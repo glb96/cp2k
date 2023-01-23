@@ -204,7 +204,7 @@ CONTAINS
 
       IF (rtp%converged) THEN
          CALL make_moment(qs_env)
-         CALL rt_total_current(qs_env=qs_env)
+         CALL rt_total_current(qs_env)
          IF (.NOT. dft_control%qs_control%dftb) THEN
             CALL write_available_results(qs_env=qs_env, rtp=rtp)
          END IF
