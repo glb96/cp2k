@@ -156,9 +156,9 @@ CONTAINS
       CALL section_vals_get(hfx_sections, explicit=rtp%do_hfx)
       CALL section_vals_val_get(print_moments_section, "MAGNETIC", l_val=magnetic)
       CALL section_vals_val_get(print_moments_section, "VEL_REPRS", l_val=vel_reprs)
-      rtp%track_imag_density = magnetic .OR. vel_reprs .OR. rtp_control%velocity_gauge & 
-         .OR. rtp%do_hfx .OR. (.NOT. rtp_control%fixed_ions)
-      
+      rtp%track_imag_density = magnetic .OR. vel_reprs .OR. rtp_control%velocity_gauge &
+                               .OR. rtp%do_hfx .OR. (.NOT. rtp_control%fixed_ions)
+
       ! Hmm, not really like to initialize with the structure of S but I reckon it is
       ! done everywhere like this
       IF (rtp%track_imag_density) CALL rtp_hfx_rebuild(qs_env)
