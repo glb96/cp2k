@@ -207,16 +207,19 @@ CONTAINS
                       rtp=rtp, &
                       dft_control=dft_control)
       rtp_control => dft_control%rtp_control
-
-      IF ((rtp_control%apply_delta_pulse .OR. rtp_control%apply_delta_pulse_mag) & 
-                              .AND. (rtp_control%initial_wfn == use_scf_wfn)) THEN 
-         CALL apply_delta_pulse(qs_env, rtp, rtp_control)
-      ELSE
-         IF (.NOT. rtp%linear_scaling) THEN
-            DO i = 1, SIZE(mos)
-               CALL cp_fm_to_fm(mos(i)%mo_coeff, mos_old(2*i - 1))
-               CALL cp_fm_set_all(mos_old(2*i), zero, zero)
-            END DO
+      
+      IF (rtp_control%initial_wfn == use_scf_wfn) THEN 
+         IF (rtp_control%apply_delta_pulse .OR. rtp_control%apply_delta_pulse_mag) THEN  
+            CALL apply_delta_pulse(qs_env, rtp, rtp_control)
+         ELSE
+            IF (.NOT. rtp%linear_scaling) THEN
+               CALL get_rtp(rtp=rtp, mos_old=mos_old)
+               CALL get_qs_env(qs_env, mos=mos)
+               DO i = 1, SIZE(mos)
+                  CALL cp_fm_to_fm(mos(i)%mo_coeff, mos_old(2*i - 1))
+                  CALL cp_fm_set_all(mos_old(2*i), zero, zero)
+               END DO
+            END IF
          END IF
       END IF
 
