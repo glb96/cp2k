@@ -79,7 +79,8 @@ MODULE rt_delta_pulse
                                               build_local_magmom_matrix,&
                                               build_local_moment_matrix
    USE qs_neighbor_list_types,          ONLY: neighbor_list_set_p_type
-   USE rt_propagation_types,            ONLY: get_rtp,&
+   USE rt_propagation_types,            ONLY: rt_prop_create_mos,&
+                                              get_rtp,&
                                               rt_prop_type
 #include "../base/base_uses.f90"
 
@@ -97,11 +98,10 @@ CONTAINS
 
 
 ! **************************************************************************************************
-!> \brief Interface to call the delta pulse depending on the type of
-!>        calculation. 
+!> \brief Interface to call the delta pulse depending on the type of calculation. 
 !> \param qs_env ...
-!> \param mos_old ...
-!> \param mos_new ...
+!> \param rtp ...
+!> \param rtp_control ...
 !> \author Update: Guillaume Le Breton (2023.01)
 ! **************************************************************************************************
 
@@ -111,7 +111,7 @@ CONTAINS
       TYPE(mo_set_type), DIMENSION(:), POINTER           :: mos
       TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_old, mos_new
       TYPE(rtp_control_type), POINTER                    :: rtp_control    
-      LOGICAL                                            :: apply_pulse, periodic_cell
+      LOGICAL                                            :: my_apply_pulse, periodic_cell
       TYPE(cell_type), POINTER                           :: cell
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_s
@@ -123,7 +123,7 @@ CONTAINS
                       matrix_s=matrix_s)
       periodic_cell = ANY(cell%perd > 0)
       
-      apply_pulse = .TRUE. 
+      my_apply_pulse = .TRUE. 
       CALL get_qs_env(qs_env, mos=mos)
       IF (rtp%linear_scaling) THEN
          IF (.NOT. ASSOCIATED(mos)) THEN
@@ -132,17 +132,17 @@ CONTAINS
                "Linear-Scaling GS calculation, restart a GS calculation using an MO-based method "//&
                "from the results of your previous Linear-Scaling GS calculation "//&
                "(for 1 SCF loop for instance).")
-         apply_pulse = .FALSE.
+         my_apply_pulse = .FALSE.
          ELSE
-         ! create temporary mos_old and mos_new 
-            WRITE(*, *) 'try'
-         
+            ! create temporary mos_old and mos_new to use delta kick routine designed for MOs-based RTP
+            CALL rt_prop_create_mos(rtp, mos, qs_env%mpools, dft_control, & 
+                                    init_mos_old=.TRUE., init_mos_new=.TRUE., &
+                                    init_mos_next=.FALSE., init_mos_admn=.FALSE.)
          END IF
-      ELSE
-         CALL get_rtp(rtp=rtp, mos_old=mos_old, mos_new=mos_new)
       END IF
          
-      IF (apply_pulse) THEN
+      IF (my_apply_pulse) THEN
+         CALL get_rtp(rtp=rtp, mos_old=mos_old, mos_new=mos_new)
          IF (rtp_control%apply_delta_pulse) THEN
             IF (dft_control%qs_control%dftb) &
                CALL build_dftb_overlap(qs_env, 1, matrix_s)

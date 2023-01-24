@@ -237,7 +237,12 @@ CONTAINS
                             nelectron_spin=nelectron_spin)
             IF (ASSOCIATED(mos)) THEN
                !The wavefunction was minimized by an mo based algorith. P is therefore calculated from the mos
-               CALL rt_initialize_rho_from_mos(rtp, mos)
+               IF (ASSOCIATED(rtp%mos) .AND. ASSOCIATED(rtp%mos%old)) THEN
+                  ! Delta kick was applied and the results is in rtp%mos%old
+                  CALL rt_initialize_rho_from_mos(rtp, mos, mos_old=rtp%mos%old)
+               ELSE
+                  CALL rt_initialize_rho_from_mos(rtp, mos)
+               END IF
             ELSE
                !The wavefunction was minimized using a linear scaling method. The density matrix is therefore taken from the ls_scf_env.
                CALL get_rtp(rtp=rtp, rho_old=rho_old, rho_new=rho_new)
