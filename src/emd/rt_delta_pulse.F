@@ -124,38 +124,43 @@ CONTAINS
       periodic_cell = ANY(cell%perd > 0)
       
       apply_pulse = .TRUE. 
-      IF (.NOT. rtp%linear_scaling) THEN       
-         CALL get_qs_env(qs_env, mos=mos)
-         IF ((rtp%linear_scaling) .AND. (.NOT. ASSOCIATED(mos))) THEN
-            CALL cp_warn(__LOCATION__, "Delta Pulse not implemented for Linear-Scaling based ground "//& 
+      CALL get_qs_env(qs_env, mos=mos)
+      IF (rtp%linear_scaling) THEN
+         IF (.NOT. ASSOCIATED(mos)) THEN
+         CALL cp_warn(__LOCATION__, "Delta Pulse not implemented for Linear-Scaling based ground "//& 
                "state calculation. If you want to perform a Linear-Scaling RTP from a "//& 
                "Linear-Scaling GS calculation, restart a GS calculation using an MO-based method "//&
                "from the results of your previous Linear-Scaling GS calculation "//&
                "(for 1 SCF loop for instance).")
-            apply_pulse = .FALSE.
-         END IF
+         apply_pulse = .FALSE.
+         ELSE
+         ! create temporary mos_old and mos_new 
+            WRITE(*, *) 'try'
          
-         IF (apply_pulse) THEN
-            CALL get_rtp(rtp=rtp, mos_old=mos_old, mos_new=mos_new)
-            IF (rtp_control%apply_delta_pulse) THEN
-               IF (dft_control%qs_control%dftb) &
-                  CALL build_dftb_overlap(qs_env, 1, matrix_s)
-               IF (rtp_control%periodic) THEN
-                  CALL apply_delta_pulse_electric_periodic(qs_env, mos_old, mos_new)
-               ELSE
-                  IF (periodic_cell) THEN
-                     CPWARN("This application of the delta pulse is not compatible with PBC!")
-                  END IF
-                  CALL apply_delta_pulse_electric(qs_env, mos_old, mos_new)
-               END IF
-            ELSE IF (rtp_control%apply_delta_pulse_mag) THEN
+         END IF
+      ELSE
+         CALL get_rtp(rtp=rtp, mos_old=mos_old, mos_new=mos_new)
+      END IF
+         
+      IF (apply_pulse) THEN
+         IF (rtp_control%apply_delta_pulse) THEN
+            IF (dft_control%qs_control%dftb) &
+               CALL build_dftb_overlap(qs_env, 1, matrix_s)
+            IF (rtp_control%periodic) THEN
+               CALL apply_delta_pulse_electric_periodic(qs_env, mos_old, mos_new)
+            ELSE
                IF (periodic_cell) THEN
                   CPWARN("This application of the delta pulse is not compatible with PBC!")
                END IF
-               CALL apply_delta_pulse_mag(qs_env, mos_old, mos_new)
-            ELSE
-               CPABORT("Code error: this case should not happend!")
+               CALL apply_delta_pulse_electric(qs_env, mos_old, mos_new)
             END IF
+         ELSE IF (rtp_control%apply_delta_pulse_mag) THEN
+            IF (periodic_cell) THEN
+               CPWARN("This application of the delta pulse is not compatible with PBC!")
+            END IF
+            CALL apply_delta_pulse_mag(qs_env, mos_old, mos_new)
+         ELSE
+            CPABORT("Code error: this case should not happend!")
          END IF
       END IF
 
