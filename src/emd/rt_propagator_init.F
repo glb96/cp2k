@@ -480,27 +480,26 @@ CONTAINS
             CALL dbcsr_copy(rho_new(re)%matrix, rho_old(re)%matrix)
             
             ! Imaginary part of rho 
-            IF (rtp%track_imag_density) THEN
-                CALL dbcsr_set(rho_old(im)%matrix, 0.0_dp)
-                CALL cp_fm_create(mos_occ_im, &
-                              matrix_struct=mos(ispin)%mo_coeff%matrix_struct, &
-                              name="mos_occ_im")
-                alpha = 3.0_dp - REAL(SIZE(mos_old)/2, dp)
-                CALL cp_fm_to_fm(mos_old(re), mos_occ)
-                CALL cp_fm_column_scale(mos_occ, mos(ispin)%occupation_numbers/alpha)
-                CALL cp_fm_to_fm(mos_old(im), mos_occ_im)
-                CALL cp_fm_column_scale(mos_occ_im, mos(ispin)%occupation_numbers/alpha)
-                CALL cp_dbcsr_plus_fm_fm_t(sparse_matrix=rho_old(im)%matrix, &
-                                       matrix_v=mos_occ_im, &
-                                       matrix_g=mos_occ, &
-                                       ncol=ncol, &
-                                       alpha=2.0_dp*alpha, &
-                                       symmetry_mode=-1)
-               
-               CALL dbcsr_filter(rho_old(im)%matrix, rtp%filter_eps)
-               CALL dbcsr_copy(rho_new(im)%matrix, rho_old(im)%matrix)
-               CALL cp_fm_release(mos_occ_im)
-            END IF
+            CALL dbcsr_set(rho_old(im)%matrix, 0.0_dp)
+            CALL cp_fm_create(mos_occ_im, &
+                          matrix_struct=mos(ispin)%mo_coeff%matrix_struct, &
+                          name="mos_occ_im")
+            alpha = 3.0_dp - REAL(SIZE(mos_old)/2, dp)
+            CALL cp_fm_to_fm(mos_old(re), mos_occ)
+            CALL cp_fm_column_scale(mos_occ, mos(ispin)%occupation_numbers/alpha)
+            CALL cp_fm_to_fm(mos_old(im), mos_occ_im)
+            CALL cp_fm_column_scale(mos_occ_im, mos(ispin)%occupation_numbers/alpha)
+            CALL cp_dbcsr_plus_fm_fm_t(sparse_matrix=rho_old(im)%matrix, &
+                                   matrix_v=mos_occ_im, &
+                                   matrix_g=mos_occ, &
+                                   ncol=ncol, &
+                                   alpha=2.0_dp*alpha, &
+                                   symmetry_mode=-1)
+            
+            CALL dbcsr_filter(rho_old(im)%matrix, rtp%filter_eps)
+            CALL dbcsr_copy(rho_new(im)%matrix, rho_old(im)%matrix)
+
+            CALL cp_fm_release(mos_occ_im)
             CALL cp_fm_release(mos_occ)
          END DO
          ! Release the mos used to apply the delta kick, no longer required

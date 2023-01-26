@@ -185,47 +185,6 @@ CONTAINS
          ELSE
             CALL rt_prop_create_mos(rtp, mos, mpools, dft_control)
          END IF
-         !CALL mpools_get(mpools, ao_mo_fm_pools=ao_mo_fm_pools)
-
-         !ao_mo_fmstruct => fm_pool_get_el_struct(ao_mo_fm_pools(1)%pool)
-         !CALL cp_fm_struct_get(ao_mo_fmstruct, nrow_block=nrow_block)
-         !CALL get_mo_set(mos(1), nao=nao)
-
-         !CALL cp_fm_struct_create(fmstruct=rtp%ao_ao_fmstruct, &
-         !                         nrow_block=nrow_block, ncol_block=nrow_block, &
-         !                         nrow_global=nao, ncol_global=nao, &
-         !                         template_fmstruct=ao_mo_fmstruct)
-         !ALLOCATE (rtp%mos)
-         !ALLOCATE (rtp%mos%old(2*nspin)) !GLB!
-         !ALLOCATE (rtp%mos%new(2*nspin)) !GLB!
-         !ALLOCATE (rtp%mos%next(2*nspin)) 
-         !NULLIFY (rtp%mos%admm)
-         !IF (dft_control%do_admm) THEN
-         !   IF (PRESENT(mos_aux)) THEN
-         !      CPASSERT(ASSOCIATED(mos_aux))
-         !   ELSE
-         !      CPABORT("The optional argument mos_aux is missing which is required with ADMM")
-         !   END IF
-         !   ALLOCATE (rtp%mos%admm(2*nspin))
-         !END IF
-         !DO i = 1, nspin
-         !   DO j = 1, 2
-         !      CALL cp_fm_create(rtp%mos%old(2*(i - 1) + j), &
-         !                        matrix_struct=mos(i)%mo_coeff%matrix_struct, &
-         !                        name="mos_old"//TRIM(ADJUSTL(cp_to_string(2*(i - 1) + j))))
-         !      CALL cp_fm_create(rtp%mos%new(2*(i - 1) + j), &
-         !                        matrix_struct=mos(i)%mo_coeff%matrix_struct, &
-         !                        name="mos_new"//TRIM(ADJUSTL(cp_to_string(2*(i - 1) + j))))
-         !      CALL cp_fm_create(rtp%mos%next(2*(i - 1) + j), &
-         !                        matrix_struct=mos(i)%mo_coeff%matrix_struct, &
-         !                        name="mos_next"//TRIM(ADJUSTL(cp_to_string(2*(i - 1) + j))))
-         !      IF (dft_control%do_admm) THEN
-         !         CALL cp_fm_create(rtp%mos%admm(2*(i - 1) + j), &
-         !                           matrix_struct=mos_aux(i)%mo_coeff%matrix_struct, &
-         !                           name="mos_admm"//TRIM(ADJUSTL(cp_to_string(2*(i - 1) + j))))
-         !      END IF
-         !   END DO
-         !END DO
       END IF
 
       NULLIFY (rtp%exp_H_old)
@@ -493,17 +452,6 @@ CONTAINS
          DEALLOCATE (rtp%rho)
       END IF
 
-      !IF (ASSOCIATED(rtp%mos)) THEN
-      !   IF (ASSOCIATED(rtp%mos%old)) &
-      !      CALL cp_fm_vect_dealloc(rtp%mos%old)
-      !   IF (ASSOCIATED(rtp%mos%new)) &
-      !      CALL cp_fm_vect_dealloc(rtp%mos%new)
-      !   IF (ASSOCIATED(rtp%mos%next)) &
-      !      CALL cp_fm_vect_dealloc(rtp%mos%next)
-      !   IF (ASSOCIATED(rtp%mos%admm)) &
-      !      CALL cp_fm_vect_dealloc(rtp%mos%admm)
-      !   DEALLOCATE (rtp%mos)
-      !END IF
       call rt_prop_release_mos(rtp)
 
       CALL dbcsr_deallocate_matrix(rtp%S_inv)
