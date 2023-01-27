@@ -430,7 +430,7 @@ CONTAINS
       CALL get_rtp(rtp=rtp, rho_old=rho_old, rho_new=rho_new)
       
       IF (PRESENT(mos_old)) THEN
-         ! Used the mos from delta kick: initialized both real and im part
+         ! Used the mos from delta kick. Initialize both real and im part
          DO ispin = 1, SIZE(mos_old)/2
             re = 2*ispin - 1; im = 2*ispin
             CALL dbcsr_set(rho_old(re)%matrix, 0.0_dp)
@@ -480,7 +480,6 @@ CONTAINS
             CALL dbcsr_copy(rho_new(re)%matrix, rho_old(re)%matrix)
             
             ! Imaginary part of rho 
-            CALL dbcsr_set(rho_old(im)%matrix, 0.0_dp)
             CALL cp_fm_create(mos_occ_im, &
                           matrix_struct=mos(ispin)%mo_coeff%matrix_struct, &
                           name="mos_occ_im")

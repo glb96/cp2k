@@ -160,7 +160,7 @@ CONTAINS
             END IF
             CALL apply_delta_pulse_mag(qs_env, mos_old, mos_new)
          ELSE
-            CPABORT("Code error: this case should not happend!")
+            CPABORT("Code error: this case should not happen!")
          END IF
       END IF
 
