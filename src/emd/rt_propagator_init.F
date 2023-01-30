@@ -440,7 +440,6 @@ CONTAINS
                               name="mos_occ")
             !Real part of rho 
             CALL cp_fm_to_fm(mos_old(re), mos_occ)
-            !WRITE(*, *) mos_occ%local_data
             IF (mos(ispin)%uniform_occupation) THEN
                alpha = 3.0_dp - REAL(SIZE(mos_old)/2, dp)
                CALL cp_fm_column_scale(mos_occ, mos(ispin)%occupation_numbers/alpha)
