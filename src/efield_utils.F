@@ -46,7 +46,8 @@ MODULE efield_utils
 ! *** Public subroutines ***
 
    PUBLIC :: efield_potential, &
-             calculate_ecore_efield
+             calculate_ecore_efield, &
+             make_field
 
 CONTAINS
 
@@ -93,7 +94,8 @@ CONTAINS
       dvol = v_efield_rspace%pw_grid%dvol
       dr = v_efield_rspace%pw_grid%dr
 
-      CALL make_field(dft_control, field, qs_env%sim_step, qs_env%sim_time)
+      !CALL make_field(dft_control, field, qs_env%sim_step, qs_env%sim_time)
+      field = make_field(dft_control, qs_env%sim_step, qs_env%sim_time)
 
       DO k = bo_local(1, 3), bo_local(2, 3)
          DO j = bo_local(1, 2), bo_local(2, 2)
@@ -124,63 +126,80 @@ CONTAINS
 !> \author Florian Schiffmann (02.09)
 ! **************************************************************************************************
 
-   SUBROUTINE make_field(dft_control, field, sim_step, sim_time)
-      TYPE(dft_control_type)                             :: dft_control
-      REAL(dp)                                           :: field(3)
-      INTEGER                                            :: sim_step
-      REAL(KIND=dp)                                      :: sim_time
+   PURE FUNCTION make_field(dft_control, sim_step, sim_time) RESULT(field)
+      TYPE(dft_control_type), INTENT(IN)                 :: dft_control
+      INTEGER, INTENT(IN)                                :: sim_step
+      REAL(KIND=dp), INTENT(IN)                          :: sim_time
+
+      REAL(KIND=dp), DIMENSION(3)                        :: field
 
       INTEGER                                            :: i, lower, nfield, upper
       REAL(dp)                                           :: c, env, nu, pol(3), strength
       REAL(KIND=dp)                                      :: dt
-      TYPE(efield_type), POINTER                         :: efield
+         
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: polarisation
+      INTEGER                                            :: envelop_id
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: envelop_r_vars
+      INTEGER, DIMENSION(:), ALLOCATABLE                 :: envelop_i_vars
+      REAL(KIND=dp)                                      :: phase_offset
 
       c = 137.03599962875_dp
       field = 0._dp
       nfield = SIZE(dft_control%efield_fields)
       DO i = 1, nfield
-         efield => dft_control%efield_fields(i)%efield
-         IF (.NOT. efield%envelop_id == custom_env) nu = c/(efield%wavelength) !in case of a custom efield we do not need nu
-         strength = SQRT(efield%strength/(3.50944_dp*10.0_dp**16))
-         IF (DOT_PRODUCT(efield%polarisation, efield%polarisation) == 0) THEN
+         envelop_id = dft_control%efield_fields(i)%efield%envelop_id
+         IF (.NOT.envelop_id == custom_env) THEN 
+            nu = c/(dft_control%efield_fields(i)%efield%wavelength) !in case of a custom efield we do not need nu
+            phase_offset = dft_control%efield_fields(i)%efield%phase_offset
+            ALLOCATE(envelop_i_vars(SIZE(dft_control%efield_fields(i)%efield%envelop_i_vars)))
+            envelop_i_vars = dft_control%efield_fields(i)%efield%envelop_i_vars
+         END IF
+         strength = SQRT(dft_control%efield_fields(i)%efield%strength/(3.50944_dp*10.0_dp**16))
+         ALLOCATE(polarisation(SIZE(dft_control%efield_fields(i)%efield%polarisation)))
+         polarisation = dft_control%efield_fields(i)%efield%polarisation
+         IF (DOT_PRODUCT(polarisation, polarisation) == 0) THEN
             pol(:) = 1.0_dp/3.0_dp
          ELSE
-            pol(:) = efield%polarisation(:)/(SQRT(DOT_PRODUCT(efield%polarisation, efield%polarisation)))
+            pol(:) = polarisation(:)/(SQRT(DOT_PRODUCT(polarisation, polarisation)))
          END IF
-         IF (efield%envelop_id == constant_env) THEN
-            IF (sim_step .GE. efield%envelop_i_vars(1) .AND. &
-                (sim_step .LE. efield%envelop_i_vars(2) .OR. efield%envelop_i_vars(2) .LT. 0)) THEN
-               field = field + strength*COS(sim_time*nu*2.0_dp*pi + &
-                                            efield%phase_offset*pi)*pol(:)
+         IF (envelop_id == constant_env) THEN
+            IF (sim_step .GE. envelop_i_vars(1) .AND. &
+                (sim_step .LE. envelop_i_vars(2) .OR. envelop_i_vars(2) .LT. 0)) THEN
+               field = field + strength*COS(sim_time*nu*2.0_dp*pi + phase_offset*pi)*pol(:)
             END IF
-         ELSE IF (efield%envelop_id == ramp_env) THEN
-            IF (sim_step .GE. efield%envelop_i_vars(1) .AND. sim_step .LE. efield%envelop_i_vars(2)) &
-               strength = strength*(sim_step - efield%envelop_i_vars(1))/(efield%envelop_i_vars(2) - efield%envelop_i_vars(1))
-            IF (sim_step .GE. efield%envelop_i_vars(3) .AND. sim_step .LE. efield%envelop_i_vars(4)) &
-               strength = strength*(efield%envelop_i_vars(4) - sim_step)/(efield%envelop_i_vars(4) - efield%envelop_i_vars(3))
-            IF (sim_step .GT. efield%envelop_i_vars(4) .AND. efield%envelop_i_vars(4) .GT. 0) strength = 0.0_dp
-            IF (sim_step .LE. efield%envelop_i_vars(1)) strength = 0.0_dp
-            field = field + strength*COS(sim_time*nu*2.0_dp*pi + &
-                                         efield%phase_offset*pi)*pol(:)
-         ELSE IF (efield%envelop_id == gaussian_env) THEN
-            env = EXP(-0.5_dp*((sim_time - efield%envelop_r_vars(1))/efield%envelop_r_vars(2))**2.0_dp)
-            field = field + strength*env*COS(sim_time*nu*2.0_dp*pi + &
-                                             efield%phase_offset*pi)*pol(:)
-         ELSE IF (efield%envelop_id == custom_env) THEN
-            dt = efield%envelop_r_vars(1)
-            IF (sim_time .LT. (SIZE(efield%envelop_r_vars) - 2)*dt) THEN
+         ELSE IF (envelop_id == ramp_env) THEN
+            IF (sim_step .GE. envelop_i_vars(1) .AND. sim_step .LE. envelop_i_vars(2)) &
+               strength = strength*(sim_step - envelop_i_vars(1))/(envelop_i_vars(2) - envelop_i_vars(1))
+            IF (sim_step .GE. envelop_i_vars(3) .AND. sim_step .LE. envelop_i_vars(4)) &
+               strength = strength*(envelop_i_vars(4) - sim_step)/(envelop_i_vars(4) - envelop_i_vars(3))
+            IF (sim_step .GT. envelop_i_vars(4) .AND. envelop_i_vars(4) .GT. 0) strength = 0.0_dp
+            IF (sim_step .LE. envelop_i_vars(1)) strength = 0.0_dp
+            field = field + strength*COS(sim_time*nu*2.0_dp*pi + phase_offset*pi)*pol(:)
+         ELSE IF (envelop_id == gaussian_env) THEN
+            ALLOCATE(envelop_r_vars(SIZE(dft_control%efield_fields(i)%efield%envelop_r_vars)))
+            envelop_r_vars = dft_control%efield_fields(i)%efield%envelop_r_vars
+            env = EXP(-0.5_dp*((sim_time - envelop_r_vars(1))/envelop_r_vars(2))**2.0_dp)
+            field = field + strength*env*COS(sim_time*nu*2.0_dp*pi + phase_offset*pi)*pol(:)
+         ELSE IF (envelop_id == custom_env) THEN
+            ALLOCATE(envelop_r_vars(SIZE(dft_control%efield_fields(i)%efield%envelop_r_vars)))
+            envelop_r_vars = dft_control%efield_fields(i)%efield%envelop_r_vars 
+            dt = envelop_r_vars(1)
+            IF (sim_time .LT. (SIZE(envelop_r_vars) - 2)*dt) THEN
                !make a linear interpolation between the two next points
                lower = FLOOR(sim_time/dt)
                upper = lower + 1
-     strength = (efield%envelop_r_vars(lower + 2)*(upper*dt - sim_time) + efield%envelop_r_vars(upper + 2)*(sim_time - lower*dt))/dt
+               strength = (envelop_r_vars(lower + 2)*(upper*dt - sim_time) + & 
+                           envelop_r_vars(upper + 2)*(sim_time - lower*dt))/dt
             ELSE
                strength = 0.0_dp
             END IF
             field = field + strength*pol(:)
          END IF
       END DO
-
-   END SUBROUTINE make_field
+      IF (ALLOCATED(polarisation)) DEALLOCATE(polarisation)
+      IF (ALLOCATED(envelop_i_vars)) DEALLOCATE(envelop_i_vars)
+      IF (ALLOCATED(envelop_r_vars)) DEALLOCATE(envelop_r_vars)
+   END FUNCTION make_field
 
 ! **************************************************************************************************
 !> \brief computes the force and the energy due to a efield on the cores
@@ -225,7 +244,8 @@ CONTAINS
                          cell=cell)
          efield_ener = 0.0_dp
          nkind = SIZE(atomic_kind_set)
-         CALL make_field(dft_control, field, qs_env%sim_step, qs_env%sim_time)
+         !CALL make_field(dft_control, field, qs_env%sim_step, qs_env%sim_time)
+         field = make_field(dft_control, qs_env%sim_step, qs_env%sim_time)
 
          DO ikind = 1, SIZE(atomic_kind_set)
             CALL get_atomic_kind(atomic_kind_set(ikind), atom_list=list, natom=natom)

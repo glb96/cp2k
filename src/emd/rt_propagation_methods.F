@@ -134,6 +134,8 @@ CONTAINS
          ! add additional terms for the velocity gauge to matrix_h and matrix_h_im
          ! should be called imediately after qs_energies_init and before qs_ks_update_qs_env
          IF (rtp_control%velocity_gauge) THEN
+            IF (dft_control%apply_vector_potential) & 
+               CALL update_vector_potential(dft_control)
             CALL velocity_gauge_ks_matrix(qs_env, subtract_nl_term=.FALSE.)
          END IF
 
