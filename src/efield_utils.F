@@ -180,7 +180,7 @@ CONTAINS
             field = field + strength*pol(:)
          END IF
       END DO
-
+      
    END SUBROUTINE make_field
 
 ! **************************************************************************************************
@@ -214,7 +214,6 @@ CONTAINS
       CALL timeset(routineN, handle)
       CALL get_qs_env(qs_env, dft_control=dft_control)
       IF (dft_control%apply_efield_field .OR. dft_control%apply_vector_potential) THEN
-         WRITE(*, *) 'update nucleus energy with field'
          my_force = .FALSE.
          IF (PRESENT(calculate_forces)) my_force = calculate_forces
 

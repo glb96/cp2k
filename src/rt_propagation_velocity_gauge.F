@@ -267,8 +267,6 @@ CONTAINS
       c = 137.03599962875_dp
       CALL make_field(dft_control, field, qs_env%sim_step, qs_env%sim_time)
       dft_control%rtp_control%vec_pot = dft_control%rtp_control%vec_pot - field*qs_env%rtp%dt
-      WRITE(*, *) 'update vec_pot'
-      WRITE(*, *) dft_control%rtp_control%vec_pot
    END SUBROUTINE update_vector_potential
 
 ! **************************************************************************************************

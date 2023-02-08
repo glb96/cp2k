@@ -407,7 +407,7 @@ CONTAINS
          CALL read_efield_sections(dft_control, tmp_section)
          IF (do_rtp) THEN
             IF (.NOT. dft_control%rtp_control%velocity_gauge) THEN
-            dft_control%apply_efield_field = .TRUE.
+               dft_control%apply_efield_field = .TRUE.
             ELSE
                dft_control%apply_vector_potential = .TRUE.
                dft_control%rtp_control%vec_pot = 0.0_dp
