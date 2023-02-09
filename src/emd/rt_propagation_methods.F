@@ -421,8 +421,7 @@ CONTAINS
             CALL dbcsr_copy(SinvH(ispin)%matrix, exp_H(im)%matrix)
          END IF
       END DO
-      IF (rtp%track_imag_density) THEN
-         CALL get_rtp(rtp=rtp, B_mat=B_mat, SinvB=SinvB)
+      IF (.NOT. rtp_control%fixed_ions .OR. rtp%do_hfx .OR. rtp_control%velocity_gauge) THEN
          IF (rtp%do_hfx .OR. rtp_control%velocity_gauge) THEN
             DO ispin = 1, SIZE(matrix_ks)
                re = ispin*2 - 1
@@ -431,8 +430,10 @@ CONTAINS
                CALL dbcsr_desymmetrize(matrix_ks_im(ispin)%matrix, matrix_ks_nosym)
 
                ! take care of the EMD case and add the velocity scaled S_derivative
-               IF (.NOT. rtp_control%fixed_ions) &
+               IF (.NOT. rtp_control%fixed_ions) THEN 
+                  CALL get_rtp(rtp=rtp, B_mat=B_mat, SinvB=SinvB)
                   CALL dbcsr_add(matrix_ks_nosym, B_mat, 1.0_dp, -1.0_dp)
+               END IF
 
                CALL dbcsr_multiply("N", "N", -one, S_inv, matrix_ks_nosym, zero, exp_H(re)%matrix, &
                                    filter_eps=rtp%filter_eps)
@@ -443,7 +444,7 @@ CONTAINS
          ELSE
             ! in case of pure EMD its only needed once as B is the same for both spins
             CALL dbcsr_multiply("N", "N", one, S_inv, B_mat, zero, exp_H(1)%matrix, filter_eps=rtp%filter_eps)
-
+            CALL get_rtp(rtp=rtp, B_mat=B_mat, SinvB=SinvB)
             CALL dbcsr_copy(SinvB(1)%matrix, exp_H(1)%matrix)
 
             IF (SIZE(matrix_ks) == 2) CALL dbcsr_copy(exp_H(3)%matrix, exp_H(1)%matrix)
