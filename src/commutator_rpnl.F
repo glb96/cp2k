@@ -33,7 +33,6 @@ MODULE commutator_rpnl
                                               get_qs_kind_set,&
                                               qs_kind_type
    USE qs_neighbor_list_types,          ONLY: get_iterator_info,&
-                                              get_neighbor_list_set_p,&
                                               neighbor_list_iterate,&
                                               neighbor_list_iterator_create,&
                                               neighbor_list_iterator_p_type,&
@@ -60,7 +59,7 @@ MODULE commutator_rpnl
 
    CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'commutator_rpnl'
 
-   PUBLIC :: build_com_rpnl, build_com_mom_nl, build_com_nl_mag, build_com_vnl_giao
+   PUBLIC :: build_com_rpnl, build_com_mom_nl, build_com_nl_mag
 
 CONTAINS
 
@@ -195,104 +194,100 @@ CONTAINS
             spot = ASSOCIATED(spotential(kkind)%sgp_potential)
             IF ((.NOT. gpot) .AND. (.NOT. spot)) CYCLE
             ! get definition of basis set
-            ASSOCIATE ( &
-               first_sgfa => basis_set(ikind)%gto_basis_set%first_sgf, &
-               la_max => basis_set(ikind)%gto_basis_set%lmax, &
-               la_min => basis_set(ikind)%gto_basis_set%lmin, &
-               npgfa => basis_set(ikind)%gto_basis_set%npgf, &
-               nsgf_seta => basis_set(ikind)%gto_basis_set%nsgf_set, &
-               rpgfa => basis_set(ikind)%gto_basis_set%pgf_radius, &
-               set_radius_a => basis_set(ikind)%gto_basis_set%set_radius, &
-               sphi_a => basis_set(ikind)%gto_basis_set%sphi, &
-               zeta => basis_set(ikind)%gto_basis_set%zet &
-               )
-               nseta = basis_set(ikind)%gto_basis_set%nset
-               nsgfa = basis_set(ikind)%gto_basis_set%nsgf
-
-               ! get definition of PP projectors
-               IF (gpot) THEN
-                  alpha_ppnl => gpotential(kkind)%gth_potential%alpha_ppnl
-                  cprj => gpotential(kkind)%gth_potential%cprj
-                  lppnl = gpotential(kkind)%gth_potential%lppnl
-                  nppnl = gpotential(kkind)%gth_potential%nppnl
-                  nprj_ppnl => gpotential(kkind)%gth_potential%nprj_ppnl
-                  ppnl_radius = gpotential(kkind)%gth_potential%ppnl_radius
-                  vprj_ppnl => gpotential(kkind)%gth_potential%vprj_ppnl
-               ELSEIF (spot) THEN
-                  CPABORT('SGP not implemented')
-               ELSE
-                  CPABORT('PPNL unknown')
-               END IF
+            first_sgfa => basis_set(ikind)%gto_basis_set%first_sgf
+            la_max => basis_set(ikind)%gto_basis_set%lmax
+            la_min => basis_set(ikind)%gto_basis_set%lmin
+            npgfa => basis_set(ikind)%gto_basis_set%npgf
+            nseta = basis_set(ikind)%gto_basis_set%nset
+            nsgfa = basis_set(ikind)%gto_basis_set%nsgf
+            nsgf_seta => basis_set(ikind)%gto_basis_set%nsgf_set
+            rpgfa => basis_set(ikind)%gto_basis_set%pgf_radius
+            set_radius_a => basis_set(ikind)%gto_basis_set%set_radius
+            sphi_a => basis_set(ikind)%gto_basis_set%sphi
+            zeta => basis_set(ikind)%gto_basis_set%zet
+            ! get definition of PP projectors
+            IF (gpot) THEN
+               alpha_ppnl => gpotential(kkind)%gth_potential%alpha_ppnl
+               cprj => gpotential(kkind)%gth_potential%cprj
+               lppnl = gpotential(kkind)%gth_potential%lppnl
+               nppnl = gpotential(kkind)%gth_potential%nppnl
+               nprj_ppnl => gpotential(kkind)%gth_potential%nprj_ppnl
+               ppnl_radius = gpotential(kkind)%gth_potential%ppnl_radius
+               vprj_ppnl => gpotential(kkind)%gth_potential%vprj_ppnl
+            ELSEIF (spot) THEN
+               CPABORT('SGP not implemented')
+            ELSE
+               CPABORT('PPNL unknown')
+            END IF
 !$OMP CRITICAL(sap_int_critical)
-               IF (.NOT. ASSOCIATED(sap_int(iac)%alist)) THEN
-                  sap_int(iac)%a_kind = ikind
-                  sap_int(iac)%p_kind = kkind
-                  sap_int(iac)%nalist = nlist
-                  ALLOCATE (sap_int(iac)%alist(nlist))
-                  DO i = 1, nlist
-                     NULLIFY (sap_int(iac)%alist(i)%clist)
-                     sap_int(iac)%alist(i)%aatom = 0
-                     sap_int(iac)%alist(i)%nclist = 0
-                  END DO
-               END IF
-               IF (.NOT. ASSOCIATED(sap_int(iac)%alist(ilist)%clist)) THEN
-                  sap_int(iac)%alist(ilist)%aatom = iatom
-                  sap_int(iac)%alist(ilist)%nclist = nneighbor
-                  ALLOCATE (sap_int(iac)%alist(ilist)%clist(nneighbor))
-                  DO i = 1, nneighbor
-                     sap_int(iac)%alist(ilist)%clist(i)%catom = 0
-                  END DO
-               END IF
-!$OMP END CRITICAL(sap_int_critical)
-               dac = SQRT(SUM(rac*rac))
-               clist => sap_int(iac)%alist(ilist)%clist(jneighbor)
-               clist%catom = katom
-               clist%cell = cell_c
-               clist%rac = rac
-               ALLOCATE (clist%acint(nsgfa, nppnl, maxder), &
-                         clist%achint(nsgfa, nppnl, maxder))
-               clist%acint = 0._dp
-               clist%achint = 0._dp
-               clist%nsgf_cnt = 0
-               NULLIFY (clist%sgf_list)
-               DO iset = 1, nseta
-                  ncoa = npgfa(iset)*ncoset(la_max(iset))
-                  sgfa = first_sgfa(1, iset)
-                  work = 0._dp
-                  prjc = 1
-                  DO l = 0, lppnl
-                     nprjc = nprj_ppnl(l)*nco(l)
-                     IF (nprjc == 0) CYCLE
-                     rprjc(1) = ppnl_radius
-                     IF (set_radius_a(iset) + rprjc(1) < dac) CYCLE
-                     lc_max = l + 2*(nprj_ppnl(l) - 1)
-                     lc_min = l
-                     zetc(1) = alpha_ppnl(l)
-                     ncoc = ncoset(lc_max)
-                     ! Calculate the primitive overlap and dipole moment integrals
-                     CALL overlap(la_max(iset), la_min(iset), npgfa(iset), rpgfa(:, iset), zeta(:, iset), &
-                                  lc_max, lc_min, 1, rprjc, zetc, rac, dac, sab(:, :, 1), 0, .FALSE., ai_work, ldai)
-                     CALL moment(la_max(iset), npgfa(iset), zeta(:, iset), rpgfa(:, iset), la_min(iset), &
-                                 lc_max, 1, zetc, rprjc, 1, rac, (/0._dp, 0._dp, 0._dp/), sab(:, :, 2:4))
-                     ! *** Transformation step projector functions (cartesian->spherical) ***
-                     DO i = 1, maxder
-                        CALL dgemm("N", "N", ncoa, nprjc, ncoc, 1.0_dp, sab(1, 1, i), ldsab, &
-                                   cprj(1, prjc), SIZE(cprj, 1), 0.0_dp, work(1, 1, i), ldsab)
-                     END DO
-                     prjc = prjc + nprjc
-                  END DO
-                  DO i = 1, maxder
-                     ! Contraction step (basis functions)
-                     CALL dgemm("T", "N", nsgf_seta(iset), nppnl, ncoa, 1.0_dp, sphi_a(1, sgfa), SIZE(sphi_a, 1), &
-                                work(1, 1, i), ldsab, 0.0_dp, clist%acint(sgfa, 1, i), nsgfa)
-                     ! Multiply with interaction matrix(h)
-                     CALL dgemm("N", "N", nsgf_seta(iset), nppnl, nppnl, 1.0_dp, clist%acint(sgfa, 1, i), nsgfa, &
-                                vprj_ppnl(1, 1), SIZE(vprj_ppnl, 1), 0.0_dp, clist%achint(sgfa, 1, i), nsgfa)
-                  END DO
+            IF (.NOT. ASSOCIATED(sap_int(iac)%alist)) THEN
+               sap_int(iac)%a_kind = ikind
+               sap_int(iac)%p_kind = kkind
+               sap_int(iac)%nalist = nlist
+               ALLOCATE (sap_int(iac)%alist(nlist))
+               DO i = 1, nlist
+                  NULLIFY (sap_int(iac)%alist(i)%clist)
+                  sap_int(iac)%alist(i)%aatom = 0
+                  sap_int(iac)%alist(i)%nclist = 0
                END DO
-               clist%maxac = MAXVAL(ABS(clist%acint(:, :, 1)))
-               clist%maxach = MAXVAL(ABS(clist%achint(:, :, 1)))
-            END ASSOCIATE
+            END IF
+            IF (.NOT. ASSOCIATED(sap_int(iac)%alist(ilist)%clist)) THEN
+               sap_int(iac)%alist(ilist)%aatom = iatom
+               sap_int(iac)%alist(ilist)%nclist = nneighbor
+               ALLOCATE (sap_int(iac)%alist(ilist)%clist(nneighbor))
+               DO i = 1, nneighbor
+                  sap_int(iac)%alist(ilist)%clist(i)%catom = 0
+               END DO
+            END IF
+!$OMP END CRITICAL(sap_int_critical)
+            dac = SQRT(SUM(rac*rac))
+            clist => sap_int(iac)%alist(ilist)%clist(jneighbor)
+            clist%catom = katom
+            clist%cell = cell_c
+            clist%rac = rac
+            ALLOCATE (clist%acint(nsgfa, nppnl, maxder), &
+                      clist%achint(nsgfa, nppnl, maxder))
+            clist%acint = 0._dp
+            clist%achint = 0._dp
+            clist%nsgf_cnt = 0
+            NULLIFY (clist%sgf_list)
+            DO iset = 1, nseta
+               ncoa = npgfa(iset)*ncoset(la_max(iset))
+               sgfa = first_sgfa(1, iset)
+               work = 0._dp
+               prjc = 1
+               DO l = 0, lppnl
+                  nprjc = nprj_ppnl(l)*nco(l)
+                  IF (nprjc == 0) CYCLE
+                  rprjc(1) = ppnl_radius
+                  IF (set_radius_a(iset) + rprjc(1) < dac) CYCLE
+                  lc_max = l + 2*(nprj_ppnl(l) - 1)
+                  lc_min = l
+                  zetc(1) = alpha_ppnl(l)
+                  ncoc = ncoset(lc_max)
+                  ! Calculate the primitive overlap and dipole moment integrals
+                  CALL overlap(la_max(iset), la_min(iset), npgfa(iset), rpgfa(:, iset), zeta(:, iset), &
+                               lc_max, lc_min, 1, rprjc, zetc, rac, dac, sab(:, :, 1), 0, .FALSE., ai_work, ldai)
+                  CALL moment(la_max(iset), npgfa(iset), zeta(:, iset), rpgfa(:, iset), la_min(iset), &
+                              lc_max, 1, zetc, rprjc, 1, rac, (/0._dp, 0._dp, 0._dp/), sab(:, :, 2:4))
+                  ! *** Transformation step projector functions (cartesian->spherical) ***
+                  DO i = 1, maxder
+                     CALL dgemm("N", "N", ncoa, nprjc, ncoc, 1.0_dp, sab(1, 1, i), ldsab, &
+                                cprj(1, prjc), SIZE(cprj, 1), 0.0_dp, work(1, 1, i), ldsab)
+                  END DO
+                  prjc = prjc + nprjc
+               END DO
+               DO i = 1, maxder
+                  ! Contraction step (basis functions)
+                  CALL dgemm("T", "N", nsgf_seta(iset), nppnl, ncoa, 1.0_dp, sphi_a(1, sgfa), SIZE(sphi_a, 1), &
+                             work(1, 1, i), ldsab, 0.0_dp, clist%acint(sgfa, 1, i), nsgfa)
+                  ! Multiply with interaction matrix(h)
+                  CALL dgemm("N", "N", nsgf_seta(iset), nppnl, nppnl, 1.0_dp, clist%acint(sgfa, 1, i), nsgfa, &
+                             vprj_ppnl(1, 1), SIZE(vprj_ppnl, 1), 0.0_dp, clist%achint(sgfa, 1, i), nsgfa)
+               END DO
+            END DO
+            clist%maxac = MAXVAL(ABS(clist%acint(:, :, 1)))
+            clist%maxach = MAXVAL(ABS(clist%achint(:, :, 1)))
          END DO
 
          DEALLOCATE (sab, ai_work, work)
@@ -449,13 +444,11 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(3), INTENT(IN), OPTIONAL  :: ref_point
 
       CHARACTER(LEN=*), PARAMETER                        :: routineN = 'build_com_mom_nl'
-      INTEGER, PARAMETER :: i_x = 2, i_xx = 5, i_xy = 6, i_xz = 7, i_y = 3, i_yx = i_xy, i_yy = 8, &
-         i_yz = 9, i_z = 4, i_zx = i_xz, i_zy = i_yz, i_zz = 10
 
       INTEGER                                            :: handle, i, iab, iac, iatom, ibc, icol, &
-                                                            ikind, ind, ind2, irow, jatom, jkind, &
-                                                            kac, kbc, kkind, na, natom, nb, nkind, &
-                                                            np, order, slot
+                                                            ikind, ind, irow, jatom, jkind, kac, &
+                                                            kbc, kkind, na, natom, nb, nkind, np, &
+                                                            order, slot
       INTEGER, DIMENSION(3)                              :: cell_b
       LOGICAL                                            :: asso_rrv, asso_rv, asso_rxrv, asso_rvr, asso_rrv_vrr, &
                                                             found, go, my_ref, &
@@ -463,6 +456,7 @@ CONTAINS
                                                             my_rvr, my_rrv_vrr, &
                                                             periodic, ppnl_present
       REAL(KIND=dp), DIMENSION(3)                        :: rab, rf
+      REAL(KIND=dp), DIMENSION(:, :, :), POINTER         :: achint, acint, bchint, bcint
       TYPE(alist_type), POINTER                          :: alist_ac, alist_bc
       TYPE(block_p_type), ALLOCATABLE, DIMENSION(:)      :: blocks_rrv, blocks_rv, blocks_rxrv, & 
                                                             blocks_rvr, blocks_rrv_vrr
@@ -481,9 +475,6 @@ CONTAINS
 
       CALL timeset(routineN, handle)
 
-      my_r_doublecom = .FALSE.
-      my_r_rxvr = .FALSE.
-      my_rxvr_r = .FALSE.
       my_rxrv = .FALSE.
       my_rrv = .FALSE.
       my_rv = .FALSE.
@@ -500,16 +491,11 @@ CONTAINS
 
       natom = SIZE(particle_set)
 
-      IF (my_rxrv .OR. my_rrv .OR. my_r_rxvr .OR. my_rxvr_r .OR. my_r_doublecom) THEN
+      IF (my_rxrv .OR. my_rrv) THEN
          order = 2
          CPASSERT(PRESENT(ref_point)) ! need reference point for r x [r,Vnl] and [rr,Vnl]
       ELSE
          order = 1
-      END IF
-
-      ! When we want the double commutator [[Vnl, r], r], we also want to fix the pseudoatom
-      IF (my_r_doublecom) THEN
-         CPASSERT(PRESENT(pseudoatom))
       END IF
 
       periodic = ANY(cell%perd > 0)
@@ -558,7 +544,6 @@ CONTAINS
 
       ! *** All integrals needed have been calculated and stored in sap_int
       ! *** We now calculate the commutator matrix elements
-      CALL get_neighbor_list_set_p(neighbor_list_sets=sab_all, symmetric=do_symmetric)
 
 !$OMP PARALLEL &
 !$OMP DEFAULT (NONE) &
@@ -597,17 +582,12 @@ CONTAINS
          IF (.NOT. ASSOCIATED(basis_set(jkind)%gto_basis_set)) CYCLE
          iab = ikind + nkind*(jkind - 1)
 
-         IF (do_symmetric) THEN
-            IF (iatom <= jatom) THEN
-               irow = iatom
-               icol = jatom
-            ELSE
-               irow = jatom
-               icol = iatom
-            END IF
-         ELSE
+         IF (iatom <= jatom) THEN
             irow = iatom
             icol = jatom
+         ELSE
+            irow = jatom
+            icol = iatom
          END IF
 
          ! allocate blocks
@@ -628,18 +608,6 @@ CONTAINS
          END IF
 
 
-         IF (my_r_rxvr) THEN
-            ALLOCATE (blocks_r_rxvr(3, 3))
-         END IF
-
-         IF (my_rxvr_r) THEN
-            ALLOCATE (blocks_rxvr_r(3, 3))
-         END IF
-
-         IF (my_r_doublecom) THEN
-            ALLOCATE (blocks_r_doublecom(3, 3))
-         END IF
-
          ! get blocks
          IF (my_rv) THEN
             DO ind = 1, 3
@@ -650,7 +618,6 @@ CONTAINS
          IF (my_rxrv) THEN
             DO ind = 1, 3
                CALL dbcsr_get_block_p(matrix_rxrv(ind)%matrix, irow, icol, blocks_rxrv(ind)%block, found)
-               blocks_rxrv(ind)%block(:, :) = 0._dp
             END DO
          END IF
 
@@ -708,7 +675,6 @@ CONTAINS
          END IF
 
          ! loop over all kinds for projector atom
-         ! < iatom | katom > h < katom | jatom >
          IF (go) THEN
             DO kkind = 1, nkind
                iac = ikind + nkind*(kkind - 1)
@@ -722,254 +688,206 @@ CONTAINS
                DO kac = 1, alist_ac%nclist
                   DO kbc = 1, alist_bc%nclist
                      IF (alist_ac%clist(kac)%catom /= alist_bc%clist(kbc)%catom) CYCLE
-                     IF (PRESENT(pseudoatom)) THEN
-                        IF (alist_ac%clist(kac)%catom /= pseudoatom) CYCLE
-                     END IF
-
                      IF (ALL(cell_b + alist_bc%clist(kbc)%cell - alist_ac%clist(kac)%cell == 0)) THEN
                         IF (alist_ac%clist(kac)%maxac*alist_bc%clist(kbc)%maxach < eps_ppnl) CYCLE
-                        ASSOCIATE (acint => alist_ac%clist(kac)%acint, &
-                                   bcint => alist_bc%clist(kbc)%acint, &
-                                   achint => alist_ac%clist(kac)%achint, &
-                                   bchint => alist_bc%clist(kbc)%achint)
-                           na = SIZE(acint, 1)
-                           np = SIZE(acint, 2)
-                           nb = SIZE(bcint, 1)
-!$                         hash = MOD((iatom - 1)*natom + jatom, nlock) + 1
-!$                         CALL omp_set_lock(locks(hash))
-                           IF (my_rv) THEN
-                              ! r*Vnl
-                              ! with LAPACK
-                              ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 2), na, &
-                              !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rv(1)%block, SIZE(blocks_rv(1)%block, 1)) ! xV
-                              ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 3), na, &
-                              !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rv(2)%block, SIZE(blocks_rv(2)%block, 1)) ! yV
-                              ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 4), na, &
-                              !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rv(3)%block, SIZE(blocks_rv(3)%block, 1)) ! zV
-                              IF (iatom <= jatom) THEN
-                                 ! with MATMUL
-                                 blocks_rv(1)%block(1:na, 1:nb) = blocks_rv(1)%block(1:na, 1:nb) + &
-                                                                  MATMUL(achint(1:na, 1:np, 2), TRANSPOSE(bcint(1:nb, 1:np, 1))) ! xV
-                                 blocks_rv(2)%block(1:na, 1:nb) = blocks_rv(2)%block(1:na, 1:nb) + &
-                                                                  MATMUL(achint(1:na, 1:np, 3), TRANSPOSE(bcint(1:nb, 1:np, 1))) ! yV
-                                 blocks_rv(3)%block(1:na, 1:nb) = blocks_rv(3)%block(1:na, 1:nb) + &
-                                                                  MATMUL(achint(1:na, 1:np, 4), TRANSPOSE(bcint(1:nb, 1:np, 1))) ! zV
-                              ELSE
-                                 blocks_rv(1)%block(1:nb, 1:na) = blocks_rv(1)%block(1:nb, 1:na) + &
-                                                                  MATMUL(bchint(1:nb, 1:np, 2), TRANSPOSE(acint(1:na, 1:np, 1)))
-                                 blocks_rv(2)%block(1:nb, 1:na) = blocks_rv(2)%block(1:nb, 1:na) + &
-                                                                  MATMUL(bchint(1:nb, 1:np, 3), TRANSPOSE(acint(1:na, 1:np, 1)))
-                                 blocks_rv(3)%block(1:nb, 1:na) = blocks_rv(3)%block(1:nb, 1:na) + &
-                                                                  MATMUL(bchint(1:nb, 1:np, 4), TRANSPOSE(acint(1:na, 1:np, 1)))
-                              END IF
-                              ! -Vnl r
-                              ! with LAPACK
-                              ! CALL dgemm("N", "T", na, nb, np, -1._dp, achint(1, 1, 1), na, &
-                              !            bcint(1, 1, 2), nb, 1.0_dp, blocks_rv(1)%block, SIZE(blocks_rv(1)%block, 1)) ! -Vx
-                              ! CALL dgemm("N", "T", na, nb, np, -1._dp, achint(1, 1, 1), na, &
-                              !            bcint(1, 1, 3), nb, 1.0_dp, blocks_rv(2)%block, SIZE(blocks_rv(2)%block, 1)) ! -Vy
-                              ! CALL dgemm("N", "T", na, nb, np, -1._dp, achint(1, 1, 1), na, &
-                              !            bcint(1, 1, 4), nb, 1.0_dp, blocks_rv(3)%block, SIZE(blocks_rv(3)%block, 1)) ! -Vz
+                        acint => alist_ac%clist(kac)%acint
+                        bcint => alist_bc%clist(kbc)%acint
+                        achint => alist_ac%clist(kac)%achint
+                        bchint => alist_bc%clist(kbc)%achint
+                        na = SIZE(acint, 1)
+                        np = SIZE(acint, 2)
+                        nb = SIZE(bcint, 1)
+!$                      hash = MOD((iatom - 1)*natom + jatom, nlock) + 1
+!$                      CALL omp_set_lock(locks(hash))
+                        IF (my_rv) THEN
+                           ! r*Vnl
+                           ! with LAPACK
+                           ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 2), na, &
+                           !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rv(1)%block, SIZE(blocks_rv(1)%block, 1)) ! xV
+                           ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 3), na, &
+                           !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rv(2)%block, SIZE(blocks_rv(2)%block, 1)) ! yV
+                           ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 4), na, &
+                           !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rv(3)%block, SIZE(blocks_rv(3)%block, 1)) ! zV
+                           IF (iatom <= jatom) THEN
                               ! with MATMUL
-                              IF (iatom <= jatom) THEN
-                                 blocks_rv(1)%block(1:na, 1:nb) = blocks_rv(1)%block(1:na, 1:nb) - &
-                                                                  MATMUL(achint(1:na, 1:np, 1), TRANSPOSE(bcint(1:nb, 1:np, 2))) ! -Vx
-                                 blocks_rv(2)%block(1:na, 1:nb) = blocks_rv(2)%block(1:na, 1:nb) - &
-                                                                  MATMUL(achint(1:na, 1:np, 1), TRANSPOSE(bcint(1:nb, 1:np, 3))) ! -Vy
-                                 blocks_rv(3)%block(1:na, 1:nb) = blocks_rv(3)%block(1:na, 1:nb) - &
-                                                                  MATMUL(achint(1:na, 1:np, 1), TRANSPOSE(bcint(1:nb, 1:np, 4))) ! -Vz
-                              ELSE
-                                 blocks_rv(1)%block(1:nb, 1:na) = blocks_rv(1)%block(1:nb, 1:na) - &
-                                                                  MATMUL(bchint(1:nb, 1:np, 1), TRANSPOSE(acint(1:na, 1:np, 2)))
-                                 blocks_rv(2)%block(1:nb, 1:na) = blocks_rv(2)%block(1:nb, 1:na) - &
-                                                                  MATMUL(bchint(1:nb, 1:np, 1), TRANSPOSE(acint(1:na, 1:np, 3)))
-                                 blocks_rv(3)%block(1:nb, 1:na) = blocks_rv(3)%block(1:nb, 1:na) - &
-                                                                  MATMUL(bchint(1:nb, 1:np, 1), TRANSPOSE(acint(1:na, 1:np, 4)))
-                              END IF
-
+                              blocks_rv(1)%block(1:na, 1:nb) = blocks_rv(1)%block(1:na, 1:nb) + &
+                                                               MATMUL(achint(1:na, 1:np, 2), TRANSPOSE(bcint(1:nb, 1:np, 1))) ! xV
+                              blocks_rv(2)%block(1:na, 1:nb) = blocks_rv(2)%block(1:na, 1:nb) + &
+                                                               MATMUL(achint(1:na, 1:np, 3), TRANSPOSE(bcint(1:nb, 1:np, 1))) ! yV
+                              blocks_rv(3)%block(1:na, 1:nb) = blocks_rv(3)%block(1:na, 1:nb) + &
+                                                               MATMUL(achint(1:na, 1:np, 4), TRANSPOSE(bcint(1:nb, 1:np, 1))) ! zV
+                           ELSE
+                              blocks_rv(1)%block(1:nb, 1:na) = blocks_rv(1)%block(1:nb, 1:na) + &
+                                                               MATMUL(bchint(1:nb, 1:np, 2), TRANSPOSE(acint(1:na, 1:np, 1)))
+                              blocks_rv(2)%block(1:nb, 1:na) = blocks_rv(2)%block(1:nb, 1:na) + &
+                                                               MATMUL(bchint(1:nb, 1:np, 3), TRANSPOSE(acint(1:na, 1:np, 1)))
+                              blocks_rv(3)%block(1:nb, 1:na) = blocks_rv(3)%block(1:nb, 1:na) + &
+                                                               MATMUL(bchint(1:nb, 1:np, 4), TRANSPOSE(acint(1:na, 1:np, 1)))
+                           END IF
+                           ! -Vnl r
+                           ! with LAPACK
+                           ! CALL dgemm("N", "T", na, nb, np, -1._dp, achint(1, 1, 1), na, &
+                           !            bcint(1, 1, 2), nb, 1.0_dp, blocks_rv(1)%block, SIZE(blocks_rv(1)%block, 1)) ! -Vx
+                           ! CALL dgemm("N", "T", na, nb, np, -1._dp, achint(1, 1, 1), na, &
+                           !            bcint(1, 1, 3), nb, 1.0_dp, blocks_rv(2)%block, SIZE(blocks_rv(2)%block, 1)) ! -Vy
+                           ! CALL dgemm("N", "T", na, nb, np, -1._dp, achint(1, 1, 1), na, &
+                           !            bcint(1, 1, 4), nb, 1.0_dp, blocks_rv(3)%block, SIZE(blocks_rv(3)%block, 1)) ! -Vz
+                           ! with MATMUL
+                           IF (iatom <= jatom) THEN
+                              blocks_rv(1)%block(1:na, 1:nb) = blocks_rv(1)%block(1:na, 1:nb) - &
+                                                               MATMUL(achint(1:na, 1:np, 1), TRANSPOSE(bcint(1:nb, 1:np, 2))) ! -Vx
+                              blocks_rv(2)%block(1:na, 1:nb) = blocks_rv(2)%block(1:na, 1:nb) - &
+                                                               MATMUL(achint(1:na, 1:np, 1), TRANSPOSE(bcint(1:nb, 1:np, 3))) ! -Vy
+                              blocks_rv(3)%block(1:na, 1:nb) = blocks_rv(3)%block(1:na, 1:nb) - &
+                                                               MATMUL(achint(1:na, 1:np, 1), TRANSPOSE(bcint(1:nb, 1:np, 4))) ! -Vz
+                           ELSE
+                              blocks_rv(1)%block(1:nb, 1:na) = blocks_rv(1)%block(1:nb, 1:na) - &
+                                                               MATMUL(bchint(1:nb, 1:np, 1), TRANSPOSE(acint(1:na, 1:np, 2)))
+                              blocks_rv(2)%block(1:nb, 1:na) = blocks_rv(2)%block(1:nb, 1:na) - &
+                                                               MATMUL(bchint(1:nb, 1:np, 1), TRANSPOSE(acint(1:na, 1:np, 3)))
+                              blocks_rv(3)%block(1:nb, 1:na) = blocks_rv(3)%block(1:nb, 1:na) - &
+                                                               MATMUL(bchint(1:nb, 1:np, 1), TRANSPOSE(acint(1:na, 1:np, 4)))
                            END IF
 
-                           IF (my_rxrv) THEN
-                              ! x-component (y [z,Vnl] - z [y, Vnl])
-                              ! with LAPACK
-                              ! CALL dgemm("N", "T", na, nb, np, 1.0_dp, achint(1, 1, 9), na, &
-                              !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rxrv(1)%block, SIZE(blocks_rxrv(1)%block, 1)) ! yzV
-                              ! CALL dgemm("N", "T", na, nb, np, -1.0_dp, achint(1, 1, 3), na, &
-                              !            bcint(1, 1, 4), nb, 1.0_dp, blocks_rxrv(1)%block, SIZE(blocks_rxrv(1)%block, 1)) ! -yVz
-                              ! CALL dgemm("N", "T", na, nb, np, -1.0_dp, achint(1, 1, 9), na, &
-                              !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rxrv(1)%block, SIZE(blocks_rxrv(1)%block, 1)) ! -zyV
-                              ! CALL dgemm("N", "T", na, nb, np, 1.0_dp, achint(1, 1, 4), na, &
-                              !            bcint(1, 1, 3), nb, 1.0_dp, blocks_rxrv(1)%block, SIZE(blocks_rxrv(1)%block, 1)) ! zVy
-                              ! with MATMUL
-                              IF (iatom <= jatom) THEN
-                                 blocks_rxrv(1)%block(1:na, 1:nb) = blocks_rxrv(1)%block(1:na, 1:nb) + &
-                                                             MATMUL(achint(1:na, 1:np, 9), TRANSPOSE(bcint(1:nb, 1:np, 1)))    ! yzV
-                                 blocks_rxrv(1)%block(1:na, 1:nb) = blocks_rxrv(1)%block(1:na, 1:nb) - &
-                                                            MATMUL(achint(1:na, 1:np, 3), TRANSPOSE(bcint(1:nb, 1:np, 4)))    ! -yVz
-                                 blocks_rxrv(1)%block(1:na, 1:nb) = blocks_rxrv(1)%block(1:na, 1:nb) - &
-                                                            MATMUL(achint(1:na, 1:np, 9), TRANSPOSE(bcint(1:nb, 1:np, 1)))    ! -zyV
-                                 blocks_rxrv(1)%block(1:na, 1:nb) = blocks_rxrv(1)%block(1:na, 1:nb) + &
-                                                             MATMUL(achint(1:na, 1:np, 4), TRANSPOSE(bcint(1:nb, 1:np, 3)))    ! zVy
-                              ELSE
-                                 blocks_rxrv(1)%block(1:nb, 1:na) = blocks_rxrv(1)%block(1:nb, 1:na) + &
-                                                             MATMUL(bchint(1:nb, 1:np, 9), TRANSPOSE(acint(1:na, 1:np, 1)))    ! yzV
-                                 blocks_rxrv(1)%block(1:nb, 1:na) = blocks_rxrv(1)%block(1:nb, 1:na) - &
-                                                            MATMUL(bchint(1:nb, 1:np, 3), TRANSPOSE(acint(1:na, 1:np, 4)))    ! -yVz
-                                 blocks_rxrv(1)%block(1:nb, 1:na) = blocks_rxrv(1)%block(1:nb, 1:na) - &
-                                                            MATMUL(bchint(1:nb, 1:np, 9), TRANSPOSE(acint(1:na, 1:np, 1)))    ! -zyV
-                                 blocks_rxrv(1)%block(1:nb, 1:na) = blocks_rxrv(1)%block(1:nb, 1:na) + &
-                                                             MATMUL(bchint(1:nb, 1:np, 4), TRANSPOSE(acint(1:na, 1:np, 3)))    ! zVy
-                              END IF
+                        END IF
 
-                              ! y-component (z [x,Vnl] - x [z, Vnl])
-                              ! with LAPACK
-                              ! CALL dgemm("N", "T", na, nb, np, 1.0_dp, achint(1, 1, 7), na, &
-                              !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rxrv(2)%block, SIZE(blocks_rxrv(2)%block, 1)) ! zxV
-                              ! CALL dgemm("N", "T", na, nb, np, -1.0_dp, achint(1, 1, 4), na, &
-                              !            bcint(1, 1, 2), nb, 1.0_dp, blocks_rxrv(2)%block, SIZE(blocks_rxrv(2)%block, 1)) ! -zVx
-                              ! CALL dgemm("N", "T", na, nb, np, -1.0_dp, achint(1, 1, 7), na, &
-                              !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rxrv(2)%block, SIZE(blocks_rxrv(2)%block, 1)) ! -xzV
-                              ! CALL dgemm("N", "T", na, nb, np, 1.0_dp, achint(1, 1, 2), na, &
-                              !            bcint(1, 1, 4), nb, 1.0_dp, blocks_rxrv(2)%block, SIZE(blocks_rxrv(2)%block, 1)) ! xVz
-                              ! with MATMUL
-                              IF (iatom <= jatom) THEN
-                                 blocks_rxrv(2)%block(1:na, 1:nb) = blocks_rxrv(2)%block(1:na, 1:nb) + &
-                                                             MATMUL(achint(1:na, 1:np, 7), TRANSPOSE(bcint(1:nb, 1:np, 1)))    ! zxV
-                                 blocks_rxrv(2)%block(1:na, 1:nb) = blocks_rxrv(2)%block(1:na, 1:nb) - &
-                                                            MATMUL(achint(1:na, 1:np, 4), TRANSPOSE(bcint(1:nb, 1:np, 2)))    ! -zVx
-                                 blocks_rxrv(2)%block(1:na, 1:nb) = blocks_rxrv(2)%block(1:na, 1:nb) - &
-                                                            MATMUL(achint(1:na, 1:np, 7), TRANSPOSE(bcint(1:nb, 1:np, 1)))    ! -xzV
-                                 blocks_rxrv(2)%block(1:na, 1:nb) = blocks_rxrv(2)%block(1:na, 1:nb) + &
-                                                             MATMUL(achint(1:na, 1:np, 2), TRANSPOSE(bcint(1:nb, 1:np, 4)))    ! xVz
-                              ELSE
-                                 blocks_rxrv(2)%block(1:nb, 1:na) = blocks_rxrv(2)%block(1:nb, 1:na) + &
-                                                             MATMUL(bchint(1:nb, 1:np, 7), TRANSPOSE(acint(1:na, 1:np, 1)))    ! zxV
-                                 blocks_rxrv(2)%block(1:nb, 1:na) = blocks_rxrv(2)%block(1:nb, 1:na) - &
-                                                            MATMUL(bchint(1:nb, 1:np, 4), TRANSPOSE(acint(1:na, 1:np, 2)))    ! -zVx
-                                 blocks_rxrv(2)%block(1:nb, 1:na) = blocks_rxrv(2)%block(1:nb, 1:na) - &
-                                                            MATMUL(bchint(1:nb, 1:np, 7), TRANSPOSE(acint(1:na, 1:np, 1)))    ! -xzV
-                                 blocks_rxrv(2)%block(1:nb, 1:na) = blocks_rxrv(2)%block(1:nb, 1:na) + &
-                                                             MATMUL(bchint(1:nb, 1:np, 2), TRANSPOSE(acint(1:na, 1:np, 4)))    ! xVz
-                              END IF
-
-                              ! z-component (x [y,Vnl] - y [x, Vnl])
-                              ! with LAPACK
-                              ! CALL dgemm("N", "T", na, nb, np, 1.0_dp, achint(1, 1, 6), na, &
-                              !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rxrv(3)%block, SIZE(blocks_rxrv(3)%block, 1)) ! xyV
-                              ! CALL dgemm("N", "T", na, nb, np, -1.0_dp, achint(1, 1, 2), na, &
-                              !            bcint(1, 1, 3), nb, 1.0_dp, blocks_rxrv(3)%block, SIZE(blocks_rxrv(3)%block, 1)) ! -xVy
-                              ! CALL dgemm("N", "T", na, nb, np, -1.0_dp, achint(1, 1, 6), na, &
-                              !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rxrv(3)%block, SIZE(blocks_rxrv(3)%block, 1)) ! -yxV
-                              ! CALL dgemm("N", "T", na, nb, np, 1.0_dp, achint(1, 1, 3), na, &
-                              !            bcint(1, 1, 2), nb, 1.0_dp, blocks_rxrv(3)%block, SIZE(blocks_rxrv(3)%block, 1)) ! yVx
-                              ! with MATMUL
-                              IF (iatom <= jatom) THEN
-                                 blocks_rxrv(3)%block(1:na, 1:nb) = blocks_rxrv(3)%block(1:na, 1:nb) + &
-                                                             MATMUL(achint(1:na, 1:np, 6), TRANSPOSE(bcint(1:nb, 1:np, 1)))    ! xyV
-                                 blocks_rxrv(3)%block(1:na, 1:nb) = blocks_rxrv(3)%block(1:na, 1:nb) - &
-                                                            MATMUL(achint(1:na, 1:np, 2), TRANSPOSE(bcint(1:nb, 1:np, 3)))    ! -xVy
-                                 blocks_rxrv(3)%block(1:na, 1:nb) = blocks_rxrv(3)%block(1:na, 1:nb) - &
-                                                            MATMUL(achint(1:na, 1:np, 6), TRANSPOSE(bcint(1:nb, 1:np, 1)))    ! -yxV
-                                 blocks_rxrv(3)%block(1:na, 1:nb) = blocks_rxrv(3)%block(1:na, 1:nb) + &
-                                                             MATMUL(achint(1:na, 1:np, 3), TRANSPOSE(bcint(1:nb, 1:np, 2)))    ! zVx
-                              ELSE
-                                 blocks_rxrv(3)%block(1:nb, 1:na) = blocks_rxrv(3)%block(1:nb, 1:na) + &
-                                                             MATMUL(bchint(1:nb, 1:np, 6), TRANSPOSE(acint(1:na, 1:np, 1)))    ! xyV
-                                 blocks_rxrv(3)%block(1:nb, 1:na) = blocks_rxrv(3)%block(1:nb, 1:na) - &
-                                                            MATMUL(bchint(1:nb, 1:np, 2), TRANSPOSE(acint(1:na, 1:np, 3)))    ! -xVy
-                                 blocks_rxrv(3)%block(1:nb, 1:na) = blocks_rxrv(3)%block(1:nb, 1:na) - &
-                                                            MATMUL(bchint(1:nb, 1:np, 6), TRANSPOSE(acint(1:na, 1:np, 1)))    ! -yxV
-                                 blocks_rxrv(3)%block(1:nb, 1:na) = blocks_rxrv(3)%block(1:nb, 1:na) + &
-                                                             MATMUL(bchint(1:nb, 1:np, 3), TRANSPOSE(acint(1:na, 1:np, 2)))    ! zVx
-                              END IF
+                        IF (my_rxrv) THEN
+                           ! x-component (y [z,Vnl] - z [y, Vnl])
+                           ! with LAPACK
+                           ! CALL dgemm("N", "T", na, nb, np, 1.0_dp, achint(1, 1, 9), na, &
+                           !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rxrv(1)%block, SIZE(blocks_rxrv(1)%block, 1)) ! yzV
+                           ! CALL dgemm("N", "T", na, nb, np, -1.0_dp, achint(1, 1, 3), na, &
+                           !            bcint(1, 1, 4), nb, 1.0_dp, blocks_rxrv(1)%block, SIZE(blocks_rxrv(1)%block, 1)) ! -yVz
+                           ! CALL dgemm("N", "T", na, nb, np, -1.0_dp, achint(1, 1, 9), na, &
+                           !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rxrv(1)%block, SIZE(blocks_rxrv(1)%block, 1)) ! -zyV
+                           ! CALL dgemm("N", "T", na, nb, np, 1.0_dp, achint(1, 1, 4), na, &
+                           !            bcint(1, 1, 3), nb, 1.0_dp, blocks_rxrv(1)%block, SIZE(blocks_rxrv(1)%block, 1)) ! zVy
+                           ! with MATMUL
+                           IF (iatom <= jatom) THEN
+                              blocks_rxrv(1)%block(1:na, 1:nb) = blocks_rxrv(1)%block(1:na, 1:nb) + &
+                                                                 MATMUL(achint(1:na, 1:np, 9), TRANSPOSE(bcint(1:nb, 1:np, 1)))    ! yzV
+                              blocks_rxrv(1)%block(1:na, 1:nb) = blocks_rxrv(1)%block(1:na, 1:nb) - &
+                                                                 MATMUL(achint(1:na, 1:np, 3), TRANSPOSE(bcint(1:nb, 1:np, 4)))    ! -yVz
+                              blocks_rxrv(1)%block(1:na, 1:nb) = blocks_rxrv(1)%block(1:na, 1:nb) - &
+                                                                 MATMUL(achint(1:na, 1:np, 9), TRANSPOSE(bcint(1:nb, 1:np, 1)))    ! -zyV
+                              blocks_rxrv(1)%block(1:na, 1:nb) = blocks_rxrv(1)%block(1:na, 1:nb) + &
+                                                                 MATMUL(achint(1:na, 1:np, 4), TRANSPOSE(bcint(1:nb, 1:np, 3)))    ! zVy
+                           ELSE
+                              blocks_rxrv(1)%block(1:nb, 1:na) = blocks_rxrv(1)%block(1:nb, 1:na) + &
+                                                                 MATMUL(bchint(1:nb, 1:np, 9), TRANSPOSE(acint(1:na, 1:np, 1)))    ! yzV
+                              blocks_rxrv(1)%block(1:nb, 1:na) = blocks_rxrv(1)%block(1:nb, 1:na) - &
+                                                                 MATMUL(bchint(1:nb, 1:np, 3), TRANSPOSE(acint(1:na, 1:np, 4)))    ! -yVz
+                              blocks_rxrv(1)%block(1:nb, 1:na) = blocks_rxrv(1)%block(1:nb, 1:na) - &
+                                                                 MATMUL(bchint(1:nb, 1:np, 9), TRANSPOSE(acint(1:na, 1:np, 1)))    ! -zyV
+                              blocks_rxrv(1)%block(1:nb, 1:na) = blocks_rxrv(1)%block(1:nb, 1:na) + &
+                                                                 MATMUL(bchint(1:nb, 1:np, 4), TRANSPOSE(acint(1:na, 1:np, 3)))    ! zVy
                            END IF
 
-                           IF (my_rrv) THEN
-                              ! r_alpha * r_beta * Vnl
-                              ! with LAPACK
-                              ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 5), na, &
-                              !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rrv(1)%block, SIZE(blocks_rrv(1)%block, 1)) ! xxV
-                              ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 6), na, &
-                              !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rrv(2)%block, SIZE(blocks_rrv(2)%block, 1)) ! xyV
-                              ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 7), na, &
-                              !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rrv(3)%block, SIZE(blocks_rrv(3)%block, 1)) ! xzV
-                              ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 8), na, &
-                              !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rrv(4)%block, SIZE(blocks_rrv(4)%block, 1)) ! yyV
-                              ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 9), na, &
-                              !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rrv(5)%block, SIZE(blocks_rrv(5)%block, 1)) ! yzV
-                              ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 10), na, &
-                              !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rrv(6)%block, SIZE(blocks_rrv(6)%block, 1)) ! zzV
-                              ! with MATMUL
-                              IF (iatom <= jatom) THEN
-                                 blocks_rrv(1)%block(1:na, 1:nb) = blocks_rrv(1)%block(1:na, 1:nb) + &
-                                                                   MATMUL(achint(1:na, 1:np, 5), TRANSPOSE(bcint(1:nb, 1:np, 1)))   ! xxV
-                                 blocks_rrv(2)%block(1:na, 1:nb) = blocks_rrv(2)%block(1:na, 1:nb) + &
-                                                                   MATMUL(achint(1:na, 1:np, 6), TRANSPOSE(bcint(1:nb, 1:np, 1)))   ! xyV
-                                 blocks_rrv(3)%block(1:na, 1:nb) = blocks_rrv(3)%block(1:na, 1:nb) + &
-                                                                   MATMUL(achint(1:na, 1:np, 7), TRANSPOSE(bcint(1:nb, 1:np, 1)))   ! xzV
-                                 blocks_rrv(4)%block(1:na, 1:nb) = blocks_rrv(4)%block(1:na, 1:nb) + &
-                                                                   MATMUL(achint(1:na, 1:np, 8), TRANSPOSE(bcint(1:nb, 1:np, 1)))   ! yyV
-                                 blocks_rrv(5)%block(1:na, 1:nb) = blocks_rrv(5)%block(1:na, 1:nb) + &
-                                                                   MATMUL(achint(1:na, 1:np, 9), TRANSPOSE(bcint(1:nb, 1:np, 1)))   ! yzV
-                                 blocks_rrv(6)%block(1:na, 1:nb) = blocks_rrv(6)%block(1:na, 1:nb) + &
-                                                                   MATMUL(achint(1:na, 1:np, 10), TRANSPOSE(bcint(1:nb, 1:np, 1)))   ! zzV
-                              ELSE
-                                 blocks_rrv(1)%block(1:nb, 1:na) = blocks_rrv(1)%block(1:nb, 1:na) + &
-                                                                   MATMUL(bchint(1:nb, 1:np, 5), TRANSPOSE(acint(1:na, 1:np, 1)))   ! xxV
-                                 blocks_rrv(2)%block(1:nb, 1:na) = blocks_rrv(2)%block(1:nb, 1:na) + &
-                                                                   MATMUL(bchint(1:nb, 1:np, 6), TRANSPOSE(acint(1:na, 1:np, 1)))   ! xyV
-                                 blocks_rrv(3)%block(1:nb, 1:na) = blocks_rrv(3)%block(1:nb, 1:na) + &
-                                                                   MATMUL(bchint(1:nb, 1:np, 7), TRANSPOSE(acint(1:na, 1:np, 1)))   ! xzV
-                                 blocks_rrv(4)%block(1:nb, 1:na) = blocks_rrv(4)%block(1:nb, 1:na) + &
-                                                                   MATMUL(bchint(1:nb, 1:np, 8), TRANSPOSE(acint(1:na, 1:np, 1)))   ! yyV
-                                 blocks_rrv(5)%block(1:nb, 1:na) = blocks_rrv(5)%block(1:nb, 1:na) + &
-                                                                   MATMUL(bchint(1:nb, 1:np, 9), TRANSPOSE(acint(1:na, 1:np, 1)))   ! yzV
-                                 blocks_rrv(6)%block(1:nb, 1:na) = blocks_rrv(6)%block(1:nb, 1:na) + &
-                                                                   MATMUL(bchint(1:nb, 1:np, 10), TRANSPOSE(acint(1:na, 1:np, 1)))   ! zzV
-                              END IF
+                           ! y-component (z [x,Vnl] - x [z, Vnl])
+                           ! with LAPACK
+                           ! CALL dgemm("N", "T", na, nb, np, 1.0_dp, achint(1, 1, 7), na, &
+                           !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rxrv(2)%block, SIZE(blocks_rxrv(2)%block, 1)) ! zxV
+                           ! CALL dgemm("N", "T", na, nb, np, -1.0_dp, achint(1, 1, 4), na, &
+                           !            bcint(1, 1, 2), nb, 1.0_dp, blocks_rxrv(2)%block, SIZE(blocks_rxrv(2)%block, 1)) ! -zVx
+                           ! CALL dgemm("N", "T", na, nb, np, -1.0_dp, achint(1, 1, 7), na, &
+                           !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rxrv(2)%block, SIZE(blocks_rxrv(2)%block, 1)) ! -xzV
+                           ! CALL dgemm("N", "T", na, nb, np, 1.0_dp, achint(1, 1, 2), na, &
+                           !            bcint(1, 1, 4), nb, 1.0_dp, blocks_rxrv(2)%block, SIZE(blocks_rxrv(2)%block, 1)) ! xVz
+                           ! with MATMUL
+                           IF (iatom <= jatom) THEN
+                              blocks_rxrv(2)%block(1:na, 1:nb) = blocks_rxrv(2)%block(1:na, 1:nb) + &
+                                                                 MATMUL(achint(1:na, 1:np, 7), TRANSPOSE(bcint(1:nb, 1:np, 1)))    ! zxV
+                              blocks_rxrv(2)%block(1:na, 1:nb) = blocks_rxrv(2)%block(1:na, 1:nb) - &
+                                                                 MATMUL(achint(1:na, 1:np, 4), TRANSPOSE(bcint(1:nb, 1:np, 2)))    ! -zVx
+                              blocks_rxrv(2)%block(1:na, 1:nb) = blocks_rxrv(2)%block(1:na, 1:nb) - &
+                                                                 MATMUL(achint(1:na, 1:np, 7), TRANSPOSE(bcint(1:nb, 1:np, 1)))    ! -xzV
+                              blocks_rxrv(2)%block(1:na, 1:nb) = blocks_rxrv(2)%block(1:na, 1:nb) + &
+                                                                 MATMUL(achint(1:na, 1:np, 2), TRANSPOSE(bcint(1:nb, 1:np, 4)))    ! xVz
+                           ELSE
+                              blocks_rxrv(2)%block(1:nb, 1:na) = blocks_rxrv(2)%block(1:nb, 1:na) + &
+                                                                 MATMUL(bchint(1:nb, 1:np, 7), TRANSPOSE(acint(1:na, 1:np, 1)))    ! zxV
+                              blocks_rxrv(2)%block(1:nb, 1:na) = blocks_rxrv(2)%block(1:nb, 1:na) - &
+                                                                 MATMUL(bchint(1:nb, 1:np, 4), TRANSPOSE(acint(1:na, 1:np, 2)))    ! -zVx
+                              blocks_rxrv(2)%block(1:nb, 1:na) = blocks_rxrv(2)%block(1:nb, 1:na) - &
+                                                                 MATMUL(bchint(1:nb, 1:np, 7), TRANSPOSE(acint(1:na, 1:np, 1)))    ! -xzV
+                              blocks_rxrv(2)%block(1:nb, 1:na) = blocks_rxrv(2)%block(1:nb, 1:na) + &
+                                                                 MATMUL(bchint(1:nb, 1:np, 2), TRANSPOSE(acint(1:na, 1:np, 4)))    ! xVz
+                           END IF
 
-                              ! - Vnl * r_alpha * r_beta
-                              ! with LAPACK
-                              ! CALL dgemm("N", "T", na, nb, np, -1._dp, achint(1, 1, 1), na, &
-                              !            bcint(1, 1, 5), nb, 1.0_dp, blocks_rrv(1)%block, SIZE(blocks_rrv(1)%block, 1)) ! Vxx
-                              ! CALL dgemm("N", "T", na, nb, np, -1._dp, achint(1, 1, 1), na, &
-                              !            bcint(1, 1, 6), nb, 1.0_dp, blocks_rrv(2)%block, SIZE(blocks_rrv(2)%block, 1)) ! Vxy
-                              ! CALL dgemm("N", "T", na, nb, np, -1._dp, achint(1, 1, 1), na, &
-                              !            bcint(1, 1, 7), nb, 1.0_dp, blocks_rrv(3)%block, SIZE(blocks_rrv(3)%block, 1)) ! Vxz
-                              ! CALL dgemm("N", "T", na, nb, np, -1._dp, achint(1, 1, 1), na, &
-                              !            bcint(1, 1, 8), nb, 1.0_dp, blocks_rrv(4)%block, SIZE(blocks_rrv(4)%block, 1)) ! Vyy
-                              ! CALL dgemm("N", "T", na, nb, np, -1._dp, achint(1, 1, 1), na, &
-                              !            bcint(1, 1, 9), nb, 1.0_dp, blocks_rrv(5)%block, SIZE(blocks_rrv(5)%block, 1)) ! Vyz
-                              ! CALL dgemm("N", "T", na, nb, np, -1._dp, achint(1, 1, 1), na, &
-                              !            bcint(1, 1, 10), nb, 1.0_dp, blocks_rrv(6)%block, SIZE(blocks_rrv(6)%block, 1)) ! Vzz
-                              ! with MATMUL
-                              IF (iatom <= jatom) THEN
-                                 blocks_rrv(1)%block(1:na, 1:nb) = blocks_rrv(1)%block(1:na, 1:nb) - &
-                                                                   MATMUL(achint(1:na, 1:np, 1), TRANSPOSE(bcint(1:nb, 1:np, 5)))   ! -Vxx
-                                 blocks_rrv(2)%block(1:na, 1:nb) = blocks_rrv(2)%block(1:na, 1:nb) - &
-                                                                   MATMUL(achint(1:na, 1:np, 1), TRANSPOSE(bcint(1:nb, 1:np, 6)))   ! -Vxy
-                                 blocks_rrv(3)%block(1:na, 1:nb) = blocks_rrv(3)%block(1:na, 1:nb) - &
-                                                                   MATMUL(achint(1:na, 1:np, 1), TRANSPOSE(bcint(1:nb, 1:np, 7)))   ! -Vxz
-                                 blocks_rrv(4)%block(1:na, 1:nb) = blocks_rrv(4)%block(1:na, 1:nb) - &
-                                                                   MATMUL(achint(1:na, 1:np, 1), TRANSPOSE(bcint(1:nb, 1:np, 8)))   ! -Vyy
-                                 blocks_rrv(5)%block(1:na, 1:nb) = blocks_rrv(5)%block(1:na, 1:nb) - &
-                                                                   MATMUL(achint(1:na, 1:np, 1), TRANSPOSE(bcint(1:nb, 1:np, 9)))   ! -Vyz
-                                 blocks_rrv(6)%block(1:na, 1:nb) = blocks_rrv(6)%block(1:na, 1:nb) - &
-                                                                   MATMUL(achint(1:na, 1:np, 1), TRANSPOSE(bcint(1:nb, 1:np, 10)))   ! -Vzz
-                              ELSE
-                                 blocks_rrv(1)%block(1:nb, 1:na) = blocks_rrv(1)%block(1:nb, 1:na) - &
-                                                                   MATMUL(bchint(1:nb, 1:np, 1), TRANSPOSE(acint(1:na, 1:np, 5)))   ! -Vxx
-                                 blocks_rrv(2)%block(1:nb, 1:na) = blocks_rrv(2)%block(1:nb, 1:na) - &
-                                                                   MATMUL(bchint(1:nb, 1:np, 1), TRANSPOSE(acint(1:na, 1:np, 6)))   ! -Vxy
-                                 blocks_rrv(3)%block(1:nb, 1:na) = blocks_rrv(3)%block(1:nb, 1:na) - &
-                                                                   MATMUL(bchint(1:nb, 1:np, 1), TRANSPOSE(acint(1:na, 1:np, 7)))   ! -Vxz
-                                 blocks_rrv(4)%block(1:nb, 1:na) = blocks_rrv(4)%block(1:nb, 1:na) - &
-                                                                   MATMUL(bchint(1:nb, 1:np, 1), TRANSPOSE(acint(1:na, 1:np, 8)))   ! -Vyy
-                                 blocks_rrv(5)%block(1:nb, 1:na) = blocks_rrv(5)%block(1:nb, 1:na) - &
-                                                                   MATMUL(bchint(1:nb, 1:np, 1), TRANSPOSE(acint(1:na, 1:np, 9)))   ! -Vyz
-                                 blocks_rrv(6)%block(1:nb, 1:na) = blocks_rrv(6)%block(1:nb, 1:na) - &
-                                                                   MATMUL(bchint(1:nb, 1:np, 1), TRANSPOSE(acint(1:na, 1:np, 10)))   ! -Vzz
-                              END IF
+                           ! z-component (x [y,Vnl] - y [x, Vnl])
+                           ! with LAPACK
+                           ! CALL dgemm("N", "T", na, nb, np, 1.0_dp, achint(1, 1, 6), na, &
+                           !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rxrv(3)%block, SIZE(blocks_rxrv(3)%block, 1)) ! xyV
+                           ! CALL dgemm("N", "T", na, nb, np, -1.0_dp, achint(1, 1, 2), na, &
+                           !            bcint(1, 1, 3), nb, 1.0_dp, blocks_rxrv(3)%block, SIZE(blocks_rxrv(3)%block, 1)) ! -xVy
+                           ! CALL dgemm("N", "T", na, nb, np, -1.0_dp, achint(1, 1, 6), na, &
+                           !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rxrv(3)%block, SIZE(blocks_rxrv(3)%block, 1)) ! -yxV
+                           ! CALL dgemm("N", "T", na, nb, np, 1.0_dp, achint(1, 1, 3), na, &
+                           !            bcint(1, 1, 2), nb, 1.0_dp, blocks_rxrv(3)%block, SIZE(blocks_rxrv(3)%block, 1)) ! yVx
+                           ! with MATMUL
+                           IF (iatom <= jatom) THEN
+                              blocks_rxrv(3)%block(1:na, 1:nb) = blocks_rxrv(3)%block(1:na, 1:nb) + &
+                                                                 MATMUL(achint(1:na, 1:np, 6), TRANSPOSE(bcint(1:nb, 1:np, 1)))    ! xyV
+                              blocks_rxrv(3)%block(1:na, 1:nb) = blocks_rxrv(3)%block(1:na, 1:nb) - &
+                                                                 MATMUL(achint(1:na, 1:np, 2), TRANSPOSE(bcint(1:nb, 1:np, 3)))    ! -xVy
+                              blocks_rxrv(3)%block(1:na, 1:nb) = blocks_rxrv(3)%block(1:na, 1:nb) - &
+                                                                 MATMUL(achint(1:na, 1:np, 6), TRANSPOSE(bcint(1:nb, 1:np, 1)))    ! -yxV
+                              blocks_rxrv(3)%block(1:na, 1:nb) = blocks_rxrv(3)%block(1:na, 1:nb) + &
+                                                                 MATMUL(achint(1:na, 1:np, 3), TRANSPOSE(bcint(1:nb, 1:np, 2)))    ! zVx
+                           ELSE
+                              blocks_rxrv(3)%block(1:nb, 1:na) = blocks_rxrv(3)%block(1:nb, 1:na) + &
+                                                                 MATMUL(bchint(1:nb, 1:np, 6), TRANSPOSE(acint(1:na, 1:np, 1)))    ! xyV
+                              blocks_rxrv(3)%block(1:nb, 1:na) = blocks_rxrv(3)%block(1:nb, 1:na) - &
+                                                                 MATMUL(bchint(1:nb, 1:np, 2), TRANSPOSE(acint(1:na, 1:np, 3)))    ! -xVy
+                              blocks_rxrv(3)%block(1:nb, 1:na) = blocks_rxrv(3)%block(1:nb, 1:na) - &
+                                                                 MATMUL(bchint(1:nb, 1:np, 6), TRANSPOSE(acint(1:na, 1:np, 1)))    ! -yxV
+                              blocks_rxrv(3)%block(1:nb, 1:na) = blocks_rxrv(3)%block(1:nb, 1:na) + &
+                                                                 MATMUL(bchint(1:nb, 1:np, 3), TRANSPOSE(acint(1:na, 1:np, 2)))    ! zVx
+                           END IF
+                        END IF
+
+                        IF (my_rrv) THEN
+                           ! r_alpha * r_beta * Vnl
+                           ! with LAPACK
+                           ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 5), na, &
+                           !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rrv(1)%block, SIZE(blocks_rrv(1)%block, 1)) ! xxV
+                           ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 6), na, &
+                           !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rrv(2)%block, SIZE(blocks_rrv(2)%block, 1)) ! xyV
+                           ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 7), na, &
+                           !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rrv(3)%block, SIZE(blocks_rrv(3)%block, 1)) ! xzV
+                           ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 8), na, &
+                           !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rrv(4)%block, SIZE(blocks_rrv(4)%block, 1)) ! yyV
+                           ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 9), na, &
+                           !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rrv(5)%block, SIZE(blocks_rrv(5)%block, 1)) ! yzV
+                           ! CALL dgemm("N", "T", na, nb, np, 1._dp, achint(1, 1, 10), na, &
+                           !            bcint(1, 1, 1), nb, 1.0_dp, blocks_rrv(6)%block, SIZE(blocks_rrv(6)%block, 1)) ! zzV
+                           ! with MATMUL
+                           IF (iatom <= jatom) THEN
+                              blocks_rrv(1)%block(1:na, 1:nb) = blocks_rrv(1)%block(1:na, 1:nb) + &
+                                                                MATMUL(achint(1:na, 1:np, 5), TRANSPOSE(bcint(1:nb, 1:np, 1)))   ! xxV
+                              blocks_rrv(2)%block(1:na, 1:nb) = blocks_rrv(2)%block(1:na, 1:nb) + &
+                                                                MATMUL(achint(1:na, 1:np, 6), TRANSPOSE(bcint(1:nb, 1:np, 1)))   ! xyV
+                              blocks_rrv(3)%block(1:na, 1:nb) = blocks_rrv(3)%block(1:na, 1:nb) + &
+                                                                MATMUL(achint(1:na, 1:np, 7), TRANSPOSE(bcint(1:nb, 1:np, 1)))   ! xzV
+                              blocks_rrv(4)%block(1:na, 1:nb) = blocks_rrv(4)%block(1:na, 1:nb) + &
+                                                                MATMUL(achint(1:na, 1:np, 8), TRANSPOSE(bcint(1:nb, 1:np, 1)))   ! yyV
+                              blocks_rrv(5)%block(1:na, 1:nb) = blocks_rrv(5)%block(1:na, 1:nb) + &
+                                                                MATMUL(achint(1:na, 1:np, 9), TRANSPOSE(bcint(1:nb, 1:np, 1)))   ! yzV
+                              blocks_rrv(6)%block(1:na, 1:nb) = blocks_rrv(6)%block(1:na, 1:nb) + &
+                                                                MATMUL(achint(1:na, 1:np, 10), TRANSPOSE(bcint(1:nb, 1:np, 1)))   ! zzV
+                           ELSE
+                              blocks_rrv(1)%block(1:nb, 1:na) = blocks_rrv(1)%block(1:nb, 1:na) + &
+                                                                MATMUL(bchint(1:nb, 1:np, 5), TRANSPOSE(acint(1:na, 1:np, 1)))   ! xxV
+                              blocks_rrv(2)%block(1:nb, 1:na) = blocks_rrv(2)%block(1:nb, 1:na) + &
+                                                                MATMUL(bchint(1:nb, 1:np, 6), TRANSPOSE(acint(1:na, 1:np, 1)))   ! xyV
+                              blocks_rrv(3)%block(1:nb, 1:na) = blocks_rrv(3)%block(1:nb, 1:na) + &
+                                                                MATMUL(bchint(1:nb, 1:np, 7), TRANSPOSE(acint(1:na, 1:np, 1)))   ! xzV
+                              blocks_rrv(4)%block(1:nb, 1:na) = blocks_rrv(4)%block(1:nb, 1:na) + &
+                                                                MATMUL(bchint(1:nb, 1:np, 8), TRANSPOSE(acint(1:na, 1:np, 1)))   ! yyV
+                              blocks_rrv(5)%block(1:nb, 1:na) = blocks_rrv(5)%block(1:nb, 1:na) + &
+                                                                MATMUL(bchint(1:nb, 1:np, 9), TRANSPOSE(acint(1:na, 1:np, 1)))   ! yzV
+                              blocks_rrv(6)%block(1:nb, 1:na) = blocks_rrv(6)%block(1:nb, 1:na) + &
+                                                                MATMUL(bchint(1:nb, 1:np, 10), TRANSPOSE(acint(1:na, 1:np, 1)))   ! zzV
                            END IF
 
                            ! - Vnl * r_alpha * r_beta
@@ -1322,7 +1240,6 @@ CONTAINS
                      IF (alist_ac%clist(kac)%catom /= alist_bc%clist(kbc)%catom) CYCLE
                      IF (ALL(cell_b + alist_bc%clist(kbc)%cell - alist_ac%clist(kac)%cell == 0)) THEN
                         IF (alist_ac%clist(kac)%maxac*alist_bc%clist(kbc)%maxach < eps_ppnl) CYCLE
-
                         acint => alist_ac%clist(kac)%acint
                         bcint => alist_bc%clist(kbc)%acint
                         achint => alist_ac%clist(kac)%achint
@@ -1402,242 +1319,5 @@ CONTAINS
       CALL timestop(handle)
 
    END SUBROUTINE build_com_nl_mag
-
-! **************************************************************************************************
-!> \brief Calculate matrix_rv(gamma, delta) = < R^eta_gamma * Vnl * r_delta > for GIAOs
-!> \param qs_kind_set ...
-!> \param sab_all ...
-!> \param sap_ppnl ...
-!> \param eps_ppnl ...
-!> \param particle_set ...
-!> \param matrix_rv ...
-!> \param ref_point ...
-!> \param cell ...
-!> \param direction_Or If set to true: calculate Vnl * r_delta
-!>                     Otherwise       calculate r_delta * Vnl
-! **************************************************************************************************
-   SUBROUTINE build_com_vnl_giao(qs_kind_set, sab_all, sap_ppnl, eps_ppnl, particle_set, &
-                                 matrix_rv, ref_point, cell, direction_Or)
-
-      TYPE(qs_kind_type), DIMENSION(:), INTENT(IN), &
-         POINTER                                         :: qs_kind_set
-      TYPE(neighbor_list_set_p_type), DIMENSION(:), &
-         INTENT(IN), POINTER                             :: sab_all, sap_ppnl
-      REAL(KIND=dp), INTENT(IN)                          :: eps_ppnl
-      TYPE(particle_type), DIMENSION(:), INTENT(IN), &
-         POINTER                                         :: particle_set
-      TYPE(dbcsr_p_type), DIMENSION(:, :), &
-         INTENT(INOUT), OPTIONAL, POINTER                :: matrix_rv
-      REAL(KIND=dp), DIMENSION(3), INTENT(IN), OPTIONAL  :: ref_point
-      TYPE(cell_type), INTENT(IN), OPTIONAL, POINTER     :: cell
-      LOGICAL                                            :: direction_Or
-
-      CHARACTER(LEN=*), PARAMETER :: routineN = 'build_com_vnl_giao'
-      INTEGER, PARAMETER                                 :: i_1 = 1
-
-      INTEGER                                            :: delta, gamma, handle, i, iab, iac, &
-                                                            iatom, ibc, icol, ikind, irow, j, &
-                                                            jatom, jkind, kac, kbc, kkind, na, &
-                                                            natom, nb, nkind, np, order, slot
-      INTEGER, DIMENSION(3)                              :: cell_b
-      LOGICAL                                            :: found, my_ref, ppnl_present
-      REAL(KIND=dp), DIMENSION(3)                        :: rab, rf
-      TYPE(alist_type), POINTER                          :: alist_ac, alist_bc
-      TYPE(block_p_type), ALLOCATABLE, DIMENSION(:, :)   :: blocks_rv
-      TYPE(gto_basis_set_p_type), ALLOCATABLE, &
-         DIMENSION(:)                                    :: basis_set
-      TYPE(gto_basis_set_type), POINTER                  :: orb_basis_set
-      TYPE(sap_int_type), DIMENSION(:), POINTER          :: sap_int
-
-!$    INTEGER(kind=omp_lock_kind), &
-!$       ALLOCATABLE, DIMENSION(:) :: locks
-!$    INTEGER                                            :: lock_num, hash
-!$    INTEGER, PARAMETER                                 :: nlock = 501
-
-      ppnl_present = ASSOCIATED(sap_ppnl)
-      IF (.NOT. ppnl_present) RETURN
-
-      CALL timeset(routineN, handle)
-
-      natom = SIZE(particle_set)
-
-      my_ref = .FALSE.
-      IF (PRESENT(ref_point)) THEN
-         CPASSERT(PRESENT(cell)) ! need cell as well if refpoint is provided
-         rf = ref_point
-         my_ref = .TRUE.
-      END IF
-
-      nkind = SIZE(qs_kind_set)
-
-      ! sap_int needs to be shared as multiple threads need to access this
-      NULLIFY (sap_int)
-      ALLOCATE (sap_int(nkind*nkind))
-      DO i = 1, nkind*nkind
-         NULLIFY (sap_int(i)%alist, sap_int(i)%asort, sap_int(i)%aindex)
-         sap_int(i)%nalist = 0
-      END DO
-
-      order = 1
-      IF (my_ref) THEN
-         ! calculate integrals <a|x^n|p>
-         CALL build_sap_ints(sap_int, sap_ppnl, qs_kind_set, order, moment_mode=.TRUE., refpoint=rf, &
-                             particle_set=particle_set, cell=cell)
-      ELSE
-         CALL build_sap_ints(sap_int, sap_ppnl, qs_kind_set, order, moment_mode=.TRUE.)
-      END IF
-
-      ! *** Set up a sorting index
-      CALL sap_sort(sap_int)
-
-      ALLOCATE (basis_set(nkind))
-      DO ikind = 1, nkind
-         CALL get_qs_kind(qs_kind_set(ikind), basis_set=orb_basis_set)
-         IF (ASSOCIATED(orb_basis_set)) THEN
-            basis_set(ikind)%gto_basis_set => orb_basis_set
-         ELSE
-            NULLIFY (basis_set(ikind)%gto_basis_set)
-         END IF
-      END DO
-
-      CALL get_neighbor_list_set_p(neighbor_list_sets=sab_all)
-      ! *** All integrals needed have been calculated and stored in sap_int
-      ! *** We now calculate the commutator matrix elements
-
-!$OMP PARALLEL &
-!$OMP DEFAULT (NONE) &
-!$OMP SHARED  (basis_set, matrix_rv, &
-!$OMP          sap_int, nkind, eps_ppnl, locks, sab_all, &
-!$OMP          particle_set, direction_Or) &
-!$OMP PRIVATE (ikind, jkind, iatom, jatom, cell_b, rab, &
-!$OMP          iab, irow, icol, blocks_rv, &
-!$OMP          found, iac, ibc, alist_ac, alist_bc, &
-!$OMP          na, np, nb, kkind, kac, kbc, i, &
-!$OMP          hash, natom, delta, gamma)
-
-!$OMP SINGLE
-!$    ALLOCATE (locks(nlock))
-!$OMP END SINGLE
-
-!$OMP DO
-!$    DO lock_num = 1, nlock
-!$       call omp_init_lock(locks(lock_num))
-!$    END DO
-!$OMP END DO
-
-!$OMP DO SCHEDULE(GUIDED)
-
-      DO slot = 1, sab_all(1)%nl_size
-
-         ikind = sab_all(1)%nlist_task(slot)%ikind
-         jkind = sab_all(1)%nlist_task(slot)%jkind
-         iatom = sab_all(1)%nlist_task(slot)%iatom
-         jatom = sab_all(1)%nlist_task(slot)%jatom
-         cell_b(:) = sab_all(1)%nlist_task(slot)%cell(:)
-         rab(1:3) = sab_all(1)%nlist_task(slot)%r(1:3)
-
-         IF (.NOT. ASSOCIATED(basis_set(ikind)%gto_basis_set)) CYCLE
-         IF (.NOT. ASSOCIATED(basis_set(jkind)%gto_basis_set)) CYCLE
-         iab = ikind + nkind*(jkind - 1)
-
-         irow = iatom
-         icol = jatom
-
-         ! allocate blocks
-         ALLOCATE (blocks_rv(3, 3))
-
-         ! get blocks
-         DO i = 1, 3
-            DO j = 1, 3
-               CALL dbcsr_get_block_p(matrix_rv(i, j)%matrix, irow, icol, &
-                                      blocks_rv(i, j)%block, found)
-               blocks_rv(i, j)%block(:, :) = 0.0_dp
-               CPASSERT(found)
-            END DO
-         END DO
-
-         ! loop over all kinds for projector atom
-         ! < iatom | katom > h < katom | jatom >
-         DO kkind = 1, nkind
-            iac = ikind + nkind*(kkind - 1)
-            ibc = jkind + nkind*(kkind - 1)
-            IF (.NOT. ASSOCIATED(sap_int(iac)%alist)) CYCLE
-            IF (.NOT. ASSOCIATED(sap_int(ibc)%alist)) CYCLE
-            CALL get_alist(sap_int(iac), alist_ac, iatom)
-            CALL get_alist(sap_int(ibc), alist_bc, jatom)
-            IF (.NOT. ASSOCIATED(alist_ac)) CYCLE
-            IF (.NOT. ASSOCIATED(alist_bc)) CYCLE
-            DO kac = 1, alist_ac%nclist
-               DO kbc = 1, alist_bc%nclist
-                  IF (alist_ac%clist(kac)%catom /= alist_bc%clist(kbc)%catom) CYCLE
-
-                  IF (ALL(cell_b + alist_bc%clist(kbc)%cell - alist_ac%clist(kac)%cell == 0)) THEN
-                     IF (alist_ac%clist(kac)%maxac*alist_bc%clist(kbc)%maxach < eps_ppnl) CYCLE
-                     ASSOCIATE (acint => alist_ac%clist(kac)%acint, &
-                                bcint => alist_bc%clist(kbc)%acint, &
-                                achint => alist_ac%clist(kac)%achint, &
-                                bchint => alist_bc%clist(kbc)%achint)
-                        na = SIZE(acint, 1)
-                        np = SIZE(acint, 2)
-                        nb = SIZE(bcint, 1)
-!$                      hash = MOD((iatom - 1)*natom + jatom, nlock) + 1
-!$                      CALL omp_set_lock(locks(hash))
-
-                        !! The atom index is alist_ac%clist(kac)%catom
-                        ! The coordinate is particle_set(alist_ac%clist(kac)%catom)%r(:)
-                        IF (direction_Or) THEN  ! V * r_delta * (R^eta_gamma - R^nu_gamma)
-                           DO delta = 1, 3
-                              DO gamma = 1, 3
-                                 blocks_rv(gamma, delta)%block(1:na, 1:nb) &
-                                    = blocks_rv(gamma, delta)%block(1:na, 1:nb) + &
-                                      MATMUL(achint(1:na, 1:np, i_1), TRANSPOSE(bcint(1:nb, 1:np, delta + 1))) &
-                                      *(particle_set(alist_ac%clist(kac)%catom)%r(gamma) - particle_set(jatom)%r(gamma))
-                              END DO
-                           END DO
-                        ELSE                   ! r_delta * V * (R^eta_gamma - R^nu_gamma)
-                           DO delta = 1, 3
-                              DO gamma = 1, 3
-                                 blocks_rv(gamma, delta)%block(1:na, 1:nb) &
-                                    = blocks_rv(gamma, delta)%block(1:na, 1:nb) + &
-                                      MATMUL(achint(1:na, 1:np, delta + 1), TRANSPOSE(bcint(1:nb, 1:np, i_1))) &
-                                      *(particle_set(alist_ac%clist(kac)%catom)%r(gamma) - particle_set(jatom)%r(gamma))
-                              END DO
-                           END DO
-                        END IF
-                     END ASSOCIATE
-
-!$                   CALL omp_unset_lock(locks(hash))
-                     EXIT ! We have found a match and there can be only one single match
-                  END IF
-               END DO
-            END DO
-         END DO
-         DO delta = 1, 3
-            DO gamma = 1, 3
-               NULLIFY (blocks_rv(gamma, delta)%block)
-            END DO
-         END DO
-         DEALLOCATE (blocks_rv)
-      END DO
-
-!$OMP DO
-!$    DO lock_num = 1, nlock
-!$       call omp_destroy_lock(locks(lock_num))
-!$    END DO
-!$OMP END DO
-
-!$OMP SINGLE
-!$    DEALLOCATE (locks)
-!$OMP END SINGLE NOWAIT
-
-!$OMP END PARALLEL
-
-      CALL release_sap_int(sap_int)
-
-      DEALLOCATE (basis_set)
-
-      CALL timestop(handle)
-
-   END SUBROUTINE build_com_vnl_giao
 
 END MODULE commutator_rpnl
