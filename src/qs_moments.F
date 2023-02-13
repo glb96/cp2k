@@ -31,8 +31,8 @@ MODULE qs_moments
    USE cp_cfm_basic_linalg,             ONLY: cp_cfm_lu_decompose
    USE cp_cfm_types,                    ONLY: cp_cfm_create,&
                                               cp_cfm_get_info,&
-                                              cp_cfm_release,&
-                                              cp_cfm_type
+                                              cp_cfm_p_type,&
+                                              cp_cfm_release
    USE cp_control_types,                ONLY: dft_control_type
    USE cp_dbcsr_cp2k_link,              ONLY: cp_dbcsr_alloc_block_from_nbl
    USE cp_dbcsr_operations,             ONLY: cp_dbcsr_sm_fm_multiply,&
@@ -44,6 +44,7 @@ MODULE qs_moments
                                               cp_fm_struct_type
    USE cp_fm_types,                     ONLY: cp_fm_create,&
                                               cp_fm_get_info,&
+                                              cp_fm_p_type,&
                                               cp_fm_release,&
                                               cp_fm_set_all,&
                                               cp_fm_type
@@ -62,6 +63,7 @@ MODULE qs_moments
                                               kpoint_type
    USE mathconstants,                   ONLY: pi,&
                                               twopi
+   USE message_passing,                 ONLY: mp_sum
    USE moments_utils,                   ONLY: get_reference_point
    USE orbital_pointers,                ONLY: current_maxl,&
                                               indco,&
@@ -1252,10 +1254,10 @@ CONTAINS
       REAL(dp), DIMENSION(3)                             :: kvec, qq, rcc, ria
       TYPE(atomic_kind_type), POINTER                    :: atomic_kind
       TYPE(cell_type), POINTER                           :: cell
-      TYPE(cp_cfm_type), ALLOCATABLE, DIMENSION(:)       :: eigrmat
+      TYPE(cp_cfm_p_type), DIMENSION(:), POINTER         :: eigrmat
+      TYPE(cp_fm_p_type), DIMENSION(:), POINTER          :: opvec
+      TYPE(cp_fm_p_type), DIMENSION(:, :), POINTER       :: op_fm_set
       TYPE(cp_fm_struct_type), POINTER                   :: tmp_fm_struct
-      TYPE(cp_fm_type), ALLOCATABLE, DIMENSION(:)        :: opvec
-      TYPE(cp_fm_type), ALLOCATABLE, DIMENSION(:, :)     :: op_fm_set
       TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_new
       TYPE(cp_fm_type), POINTER                          :: mo_coeff
       TYPE(cp_para_env_type), POINTER                    :: para_env
@@ -1328,13 +1330,16 @@ CONTAINS
          NULLIFY (tmp_fm_struct, mo_coeff)
          CALL get_mo_set(mo_set=mos(ispin), mo_coeff=mo_coeff, nao=nao, nmo=nmo)
          nmotot = nmotot + nmo
-         CALL cp_fm_create(opvec(ispin), mo_coeff%matrix_struct)
+         ALLOCATE (opvec(ispin)%matrix)
+         CALL cp_fm_create(opvec(ispin)%matrix, mo_coeff%matrix_struct)
          CALL cp_fm_struct_create(tmp_fm_struct, nrow_global=nmo, &
                                   ncol_global=nmo, para_env=para_env, context=mo_coeff%matrix_struct%context)
          DO i = 1, SIZE(op_fm_set, 1)
-            CALL cp_fm_create(op_fm_set(i, ispin), tmp_fm_struct)
+            ALLOCATE (op_fm_set(i, ispin)%matrix)
+            CALL cp_fm_create(op_fm_set(i, ispin)%matrix, tmp_fm_struct)
          END DO
-         CALL cp_cfm_create(eigrmat(ispin), op_fm_set(1, ispin)%matrix_struct)
+         ALLOCATE (eigrmat(ispin)%matrix)
+         CALL cp_cfm_create(eigrmat(ispin)%matrix, op_fm_set(1, ispin)%matrix%matrix_struct)
          CALL cp_fm_struct_release(tmp_fm_struct)
       END DO
 
@@ -1484,13 +1489,13 @@ CONTAINS
                END IF
                zdet = CMPLX(1._dp, 0._dp, dp)
                DO ispin = 1, dft_control%nspins
-                  CALL cp_cfm_get_info(eigrmat(ispin), ncol_local=tmp_dim)
+                  CALL cp_cfm_get_info(eigrmat(ispin)%matrix, ncol_local=tmp_dim)
                   DO idim = 1, tmp_dim
-                     eigrmat(ispin)%local_data(:, idim) = &
-                        CMPLX(op_fm_set(1, ispin)%local_data(:, idim), &
-                              -op_fm_set(2, ispin)%local_data(:, idim), dp)
+                     eigrmat(ispin)%matrix%local_data(:, idim) = &
+                        CMPLX(op_fm_set(1, ispin)%matrix%local_data(:, idim), &
+                              -op_fm_set(2, ispin)%matrix%local_data(:, idim), dp)
                   END DO
-                  CALL cp_cfm_lu_decompose(eigrmat(ispin), zdeta)
+                  CALL cp_cfm_lu_decompose(eigrmat(ispin)%matrix, zdeta)
                   zdet = zdet*zdeta
                   IF (dft_control%nspins == 1) THEN
                      zdet = zdet*zdeta
@@ -1515,13 +1520,13 @@ CONTAINS
                   END IF
                   zdet = CMPLX(1._dp, 0._dp, dp)
                   DO ispin = 1, dft_control%nspins
-                     CALL cp_cfm_get_info(eigrmat(ispin), ncol_local=tmp_dim)
+                     CALL cp_cfm_get_info(eigrmat(ispin)%matrix, ncol_local=tmp_dim)
                      DO idim = 1, tmp_dim
-                        eigrmat(ispin)%local_data(:, idim) = &
-                           CMPLX(op_fm_set(1, ispin)%local_data(:, idim), &
-                                 -op_fm_set(2, ispin)%local_data(:, idim), dp)
+                        eigrmat(ispin)%matrix%local_data(:, idim) = &
+                           CMPLX(op_fm_set(1, ispin)%matrix%local_data(:, idim), &
+                                 -op_fm_set(2, ispin)%matrix%local_data(:, idim), dp)
                      END DO
-                     CALL cp_cfm_lu_decompose(eigrmat(ispin), zdeta)
+                     CALL cp_cfm_lu_decompose(eigrmat(ispin)%matrix, zdeta)
                      zdet = zdet*zdeta
                      IF (dft_control%nspins == 1) THEN
                         zdet = zdet*zdeta
@@ -1606,10 +1611,13 @@ CONTAINS
       CALL dbcsr_deallocate_matrix(sinmat)
 
       DO ispin = 1, dft_control%nspins
-         CALL cp_fm_release(opvec(ispin))
-         CALL cp_cfm_release(eigrmat(ispin))
+         CALL cp_fm_release(opvec(ispin)%matrix)
+         DEALLOCATE (opvec(ispin)%matrix)
+         CALL cp_cfm_release(eigrmat(ispin)%matrix)
+         DEALLOCATE (eigrmat(ispin)%matrix)
          DO i = 1, SIZE(op_fm_set, 1)
-            CALL cp_fm_release(op_fm_set(i, ispin))
+            CALL cp_fm_release(op_fm_set(i, ispin)%matrix)
+            DEALLOCATE (op_fm_set(i, ispin)%matrix)
          END DO
       END DO
       DEALLOCATE (op_fm_set)
@@ -1631,21 +1639,21 @@ CONTAINS
    SUBROUTINE op_orbbas(cosmat, sinmat, mos, op_fm_set, opvec)
 
       TYPE(dbcsr_type), POINTER                          :: cosmat, sinmat
-      TYPE(mo_set_type), DIMENSION(:), INTENT(IN)        :: mos
-      TYPE(cp_fm_type), DIMENSION(:, :), INTENT(IN)      :: op_fm_set
-      TYPE(cp_fm_type), DIMENSION(:), INTENT(IN)         :: opvec
+      TYPE(mo_set_type), DIMENSION(:), POINTER           :: mos
+      TYPE(cp_fm_p_type), DIMENSION(:, :), POINTER       :: op_fm_set
+      TYPE(cp_fm_p_type), DIMENSION(:), POINTER          :: opvec
 
       INTEGER                                            :: i, nao, nmo
       TYPE(cp_fm_type), POINTER                          :: mo_coeff
 
       DO i = 1, SIZE(op_fm_set, 2) ! spin
          CALL get_mo_set(mo_set=mos(i), nao=nao, mo_coeff=mo_coeff, nmo=nmo)
-         CALL cp_dbcsr_sm_fm_multiply(cosmat, mo_coeff, opvec(i), ncol=nmo)
-         CALL parallel_gemm("T", "N", nmo, nmo, nao, 1.0_dp, mo_coeff, opvec(i), 0.0_dp, &
-                            op_fm_set(1, i))
-         CALL cp_dbcsr_sm_fm_multiply(sinmat, mo_coeff, opvec(i), ncol=nmo)
-         CALL parallel_gemm("T", "N", nmo, nmo, nao, 1.0_dp, mo_coeff, opvec(i), 0.0_dp, &
-                            op_fm_set(2, i))
+         CALL cp_dbcsr_sm_fm_multiply(cosmat, mo_coeff, opvec(i)%matrix, ncol=nmo)
+         CALL parallel_gemm("T", "N", nmo, nmo, nao, 1.0_dp, mo_coeff, opvec(i)%matrix, 0.0_dp, &
+                            op_fm_set(1, i)%matrix)
+         CALL cp_dbcsr_sm_fm_multiply(sinmat, mo_coeff, opvec(i)%matrix, ncol=nmo)
+         CALL parallel_gemm("T", "N", nmo, nmo, nao, 1.0_dp, mo_coeff, opvec(i)%matrix, 0.0_dp, &
+                            op_fm_set(2, i)%matrix)
       END DO
 
    END SUBROUTINE op_orbbas
@@ -1661,8 +1669,8 @@ CONTAINS
    SUBROUTINE op_orbbas_rtp(cosmat, sinmat, mos, op_fm_set, mos_new)
 
       TYPE(dbcsr_type), POINTER                          :: cosmat, sinmat
-      TYPE(mo_set_type), DIMENSION(:), INTENT(IN)        :: mos
-      TYPE(cp_fm_type), DIMENSION(:, :), INTENT(IN)      :: op_fm_set
+      TYPE(mo_set_type), DIMENSION(:), POINTER           :: mos
+      TYPE(cp_fm_p_type), DIMENSION(:, :), POINTER       :: op_fm_set
       TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_new
 
       INTEGER                                            :: i, icol, lcol, nao, newdim, nmo
@@ -1705,8 +1713,8 @@ CONTAINS
          CALL cp_fm_release(work2)
 
          CALL cp_fm_struct_double(newstruct1, &
-                                  op_fm_set(1, i)%matrix_struct, &
-                                  op_fm_set(1, i)%matrix_struct%context, &
+                                  op_fm_set(1, i)%matrix%matrix_struct, &
+                                  op_fm_set(1, i)%matrix%matrix_struct%context, &
                                   double_col, &
                                   double_row)
 
@@ -1716,18 +1724,18 @@ CONTAINS
                             work, 0.0_dp, work1)
 
          DO icol = 1, lcol
-            op_fm_set(1, i)%local_data(:, icol) = work1%local_data(:, icol)
-            op_fm_set(2, i)%local_data(:, icol) = work1%local_data(:, icol + lcol)
+            op_fm_set(1, i)%matrix%local_data(:, icol) = work1%local_data(:, icol)
+            op_fm_set(2, i)%matrix%local_data(:, icol) = work1%local_data(:, icol + lcol)
          END DO
 
          CALL parallel_gemm("T", "N", nmo, newdim, nao, 1.0_dp, mos_new(2*i), &
                             work, 0.0_dp, work1)
 
          DO icol = 1, lcol
-            op_fm_set(1, i)%local_data(:, icol) = &
-               op_fm_set(1, i)%local_data(:, icol) + work1%local_data(:, icol + lcol)
-            op_fm_set(2, i)%local_data(:, icol) = &
-               op_fm_set(2, i)%local_data(:, icol) - work1%local_data(:, icol)
+            op_fm_set(1, i)%matrix%local_data(:, icol) = &
+               op_fm_set(1, i)%matrix%local_data(:, icol) + work1%local_data(:, icol + lcol)
+            op_fm_set(2, i)%matrix%local_data(:, icol) = &
+               op_fm_set(2, i)%matrix%local_data(:, icol) - work1%local_data(:, icol)
          END DO
 
          CALL cp_fm_release(work)
@@ -1769,7 +1777,8 @@ CONTAINS
       LOGICAL                                            :: my_com_nl, my_velreprs
       REAL(dp)                                           :: charge, dd, strace, trace
       REAL(dp), ALLOCATABLE, DIMENSION(:)                :: mmom, nlcom_rrv, nlcom_rv, nlcom_rxrv, &
-                                                            qupole_der, rmom_vel
+                                                            nlcom_rvr, nlcom_rrv_vrr, qupole_der, &
+                                                            rmom_vel
       REAL(dp), ALLOCATABLE, DIMENSION(:, :)             :: rmom
       REAL(dp), DIMENSION(3)                             :: rcc, ria
       TYPE(atomic_kind_type), POINTER                    :: atomic_kind
@@ -1824,13 +1833,17 @@ CONTAINS
          IF ((nmom >= 2) .AND. my_velreprs) THEN
             ALLOCATE (nlcom_rrv(6))
             nlcom_rrv(:) = 0._dp
+            ALLOCATE (nlcom_rvr(6))
+            nlcom_rvr(:) = 0._dp
+            ALLOCATE (nlcom_rrv_vrr(6))
+            nlcom_rrv_vrr(:) = 0._dp
          END IF
          IF (magnetic) THEN
             ALLOCATE (nlcom_rxrv(3))
             nlcom_rxrv = 0._dp
          END IF
          ! Calculate non local correction terms
-         CALL calculate_commutator_nl_terms(qs_env, nlcom_rv, nlcom_rxrv, nlcom_rrv, rcc)
+         CALL calculate_commutator_nl_terms(qs_env, nlcom_rv, nlcom_rxrv, nlcom_rrv, nlcom_rvr, nlcom_rrv_vrr, rcc) 
       END IF
 
       NULLIFY (moments)
@@ -1932,7 +1945,7 @@ CONTAINS
             END DO
          END DO
       END DO
-      CALL para_env%group%sum(rmom(:, 2))
+      CALL mp_sum(rmom(:, 2), para_env%group)
       rmom(:, :) = -rmom(:, :)
       rmom(:, 3) = rmom(:, 1) + rmom(:, 2)
 
@@ -2317,26 +2330,40 @@ CONTAINS
    END SUBROUTINE print_moments_nl
 
 ! **************************************************************************************************
-!> \brief ...
+!> \brief Calculate the expectation value of operators related to non-local potential: 
+!>        [r, Vnl], noted rv
+!>        r x [r,Vnl], noted rxrv
+!>        [rr,Vnl], noted rrv
+!>        r x Vnl x r, noted rvr
+!>        r x r x Vnl + Vnl x r x r, noted rrv_vrr
+!>        Note that the 3 first operator are commutator while the 2 last
+!>        are not. For reading clarity the same notation is used for all 5
+!>        operators.
 !> \param qs_env ...
 !> \param nlcom_rv ...
 !> \param nlcom_rxrv ...
 !> \param nlcom_rrv ...
+!> \param nlcom_rvr ...
+!> \param nlcom_rrv_vrr ...
 !> \param ref_point ...
 ! **************************************************************************************************
-   SUBROUTINE calculate_commutator_nl_terms(qs_env, nlcom_rv, nlcom_rxrv, nlcom_rrv, ref_point)
+   SUBROUTINE calculate_commutator_nl_terms(qs_env, nlcom_rv, nlcom_rxrv, nlcom_rrv, nlcom_rvr, &
+                                             nlcom_rrv_vrr, ref_point)
 
       TYPE(qs_environment_type), POINTER                 :: qs_env
-      REAL(dp), ALLOCATABLE, DIMENSION(:), OPTIONAL      :: nlcom_rv, nlcom_rxrv, nlcom_rrv
+      REAL(dp), ALLOCATABLE, DIMENSION(:), OPTIONAL      :: nlcom_rv, nlcom_rxrv, nlcom_rrv, &
+                                                            nlcom_rvr, nlcom_rrv_vrr
       REAL(dp), DIMENSION(3)                             :: ref_point
 
       CHARACTER(LEN=*), PARAMETER :: routineN = 'calculate_commutator_nl_terms'
 
       INTEGER                                            :: handle, ind, ispin
-      LOGICAL                                            :: calc_rrv, calc_rv, calc_rxrv
+      LOGICAL                                            :: calc_rrv, calc_rv, calc_rxrv, &
+                                                            calc_rvr, calc_rrv_vrr
       REAL(dp)                                           :: eps_ppnl, strace, trace
       TYPE(cell_type), POINTER                           :: cell
-      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_rrv, matrix_rv, matrix_rxrv, &
+      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_rv, matrix_rxrv, matrix_rrv, & 
+                                                            matrix_rvr, matrix_rrv_vrr, &
                                                             matrix_s, rho_ao
       TYPE(dbcsr_type), POINTER                          :: tmp_ao
       TYPE(dft_control_type), POINTER                    :: dft_control
@@ -2351,33 +2378,41 @@ CONTAINS
       calc_rv = .FALSE.
       calc_rxrv = .FALSE.
       calc_rrv = .FALSE.
+      calc_rvr = .FALSE.
+      calc_rrv_vrr = .FALSE.
 
-      IF (ALLOCATED(nlcom_rv)) calc_rv = .TRUE.
-      IF (ALLOCATED(nlcom_rrv)) calc_rrv = .TRUE.
-      IF (ALLOCATED(nlcom_rxrv)) calc_rxrv = .TRUE.
+      ! rv, rxrv and rrv are commutator matrices: anti-symmetric.
+      ! The real part of the density matrix rho_ao is symmetric so that
+      ! the expectation value of real density matrix is zero. Hence, if 
+      ! the density matrix is real, no need to compute these quantities.
+      ! This is not the case for rvr and rrv_vrr which are symmetric.
 
-      IF (.NOT. (calc_rv .OR. calc_rrv .OR. calc_rxrv)) RETURN
-
-      ! calculate expectation values
-      ! real part
-      ! This evaluates to zero, because all commutator matrices are anti-symmetric while
-      ! the real part of the density matrix rho_ao is symmetric. Tr[A*S] = 0
-      IF (calc_rv) THEN
-         nlcom_rv(:) = 0._dp
+      IF (ALLOCATED(nlcom_rv)) THEN
+         nlcom_rv(:) = 0._dp 
+         IF (qs_env%run_rtp) calc_rv = .TRUE.
       END IF
-
-      IF (calc_rrv) THEN
-         nlcom_rrv(:) = 0._dp
-      END IF
-
-      IF (calc_rxrv) THEN
+      IF (ALLOCATED(nlcom_rxrv)) THEN
          nlcom_rxrv(:) = 0._dp
+         IF (qs_env%run_rtp) calc_rxrv = .TRUE.
+      END IF
+      IF (ALLOCATED(nlcom_rrv)) THEN
+         nlcom_rrv(:) = 0._dp
+         IF (qs_env%run_rtp) calc_rrv = .TRUE.
+      END IF
+      IF (ALLOCATED(nlcom_rvr)) THEN
+         nlcom_rvr(:) = 0._dp
+         calc_rvr = .TRUE.
+      END IF
+      IF (ALLOCATED(nlcom_rrv_vrr)) THEN
+         nlcom_rrv_vrr(:) = 0._dp
+         calc_rrv_vrr = .TRUE.
       END IF
 
-      ! imagninary part of the density matrix
-      IF (qs_env%run_rtp) THEN
-         NULLIFY (cell, matrix_s, particle_set, qs_kind_set, rho, sab_all, sab_orb, sap_ppnl)
-         CALL get_qs_env(qs_env, &
+      IF (.NOT. (calc_rv .OR. calc_rrv .OR. calc_rxrv &
+                  .OR. calc_rvr .OR. calc_rrv_vrr)) RETURN
+
+      NULLIFY (cell, matrix_s, particle_set, qs_kind_set, rho, sab_all, sab_orb, sap_ppnl)
+      CALL get_qs_env(qs_env, &
                          cell=cell, &
                          dft_control=dft_control, &
                          matrix_s=matrix_s, &
@@ -2388,66 +2423,99 @@ CONTAINS
                          sab_all=sab_all, &
                          sap_ppnl=sap_ppnl)
 
-         eps_ppnl = dft_control%qs_control%eps_ppnl
-         ! Calculate commutators, only needed of there is an imaginary part of the density matrix
-         ! Allocate storage
-         NULLIFY (matrix_rv, matrix_rrv, matrix_rxrv)
-         IF (calc_rv) THEN
-            CALL dbcsr_allocate_matrix_set(matrix_rv, 3)
-            DO ind = 1, 3
-               CALL dbcsr_init_p(matrix_rv(ind)%matrix)
-               CALL dbcsr_create(matrix_rv(ind)%matrix, template=matrix_s(1)%matrix, &
-                                 matrix_type=dbcsr_type_antisymmetric)
-               CALL cp_dbcsr_alloc_block_from_nbl(matrix_rv(ind)%matrix, sab_orb)
-               CALL dbcsr_set(matrix_rv(ind)%matrix, 0._dp)
-            END DO
-         END IF
+      eps_ppnl = dft_control%qs_control%eps_ppnl
 
-         IF (calc_rrv) THEN
-            CALL dbcsr_allocate_matrix_set(matrix_rrv, 6)
-            DO ind = 1, 6
-               CALL dbcsr_init_p(matrix_rrv(ind)%matrix)
-               CALL dbcsr_create(matrix_rrv(ind)%matrix, template=matrix_s(1)%matrix, &
-                                 matrix_type=dbcsr_type_antisymmetric)
-               CALL cp_dbcsr_alloc_block_from_nbl(matrix_rrv(ind)%matrix, sab_orb)
-               CALL dbcsr_set(matrix_rrv(ind)%matrix, 0._dp)
-            END DO
-         END IF
+      ! Allocate storage
+      NULLIFY (matrix_rv, matrix_rxrv, matrix_rrv, matrix_rvr, matrix_rrv_vrr)
+      IF (calc_rv) THEN
+         CALL dbcsr_allocate_matrix_set(matrix_rv, 3)
+         DO ind = 1, 3
+            CALL dbcsr_init_p(matrix_rv(ind)%matrix)
+            CALL dbcsr_create(matrix_rv(ind)%matrix, template=matrix_s(1)%matrix, &
+                              matrix_type=dbcsr_type_antisymmetric)
+            CALL cp_dbcsr_alloc_block_from_nbl(matrix_rv(ind)%matrix, sab_orb)
+            CALL dbcsr_set(matrix_rv(ind)%matrix, 0._dp)
+         END DO
+      END IF
 
-         IF (calc_rxrv) THEN
-            CALL dbcsr_allocate_matrix_set(matrix_rxrv, 3)
-            DO ind = 1, 3
-               CALL dbcsr_init_p(matrix_rxrv(ind)%matrix)
-               CALL dbcsr_create(matrix_rxrv(ind)%matrix, template=matrix_s(1)%matrix, &
-                                 matrix_type=dbcsr_type_antisymmetric)
-               CALL cp_dbcsr_alloc_block_from_nbl(matrix_rxrv(ind)%matrix, sab_orb)
-               CALL dbcsr_set(matrix_rxrv(ind)%matrix, 0._dp)
-            END DO
-         END IF
+      IF (calc_rxrv) THEN
+         CALL dbcsr_allocate_matrix_set(matrix_rxrv, 3)
+         DO ind = 1, 3
+            CALL dbcsr_init_p(matrix_rxrv(ind)%matrix)
+            CALL dbcsr_create(matrix_rxrv(ind)%matrix, template=matrix_s(1)%matrix, &
+                              matrix_type=dbcsr_type_antisymmetric)
+            CALL cp_dbcsr_alloc_block_from_nbl(matrix_rxrv(ind)%matrix, sab_orb)
+            CALL dbcsr_set(matrix_rxrv(ind)%matrix, 0._dp)
+         END DO
+      END IF
 
-         ! calculate commutators in AO basis
-         IF (calc_rv .AND. calc_rrv .AND. .NOT. calc_rxrv) THEN
-            CALL build_com_mom_nl(qs_kind_set, sab_orb, sap_ppnl, eps_ppnl, particle_set, cell, matrix_rv=matrix_rv, &
-                                  matrix_rrv=matrix_rrv, ref_point=ref_point)
-         ELSE IF (calc_rv .AND. calc_rxrv .AND. .NOT. calc_rrv) THEN
-            CALL build_com_mom_nl(qs_kind_set, sab_orb, sap_ppnl, eps_ppnl, particle_set, cell, matrix_rv=matrix_rv, &
-                                  matrix_rxrv=matrix_rxrv, ref_point=ref_point)
-         ELSE IF (calc_rrv .AND. calc_rxrv .AND. .NOT. calc_rv) THEN
-            CALL build_com_mom_nl(qs_kind_set, sab_orb, sap_ppnl, eps_ppnl, particle_set, cell, matrix_rxrv=matrix_rxrv, &
-                                  matrix_rrv=matrix_rrv, ref_point=ref_point)
-         ELSE IF (calc_rv .AND. calc_rxrv .AND. calc_rrv) THEN
-            CALL build_com_mom_nl(qs_kind_set, sab_orb, sap_ppnl, eps_ppnl, particle_set, cell, matrix_rv=matrix_rv, &
-                                  matrix_rxrv=matrix_rxrv, matrix_rrv=matrix_rrv, ref_point=ref_point)
-         ELSE IF (calc_rv .AND. .NOT. calc_rrv .AND. .NOT. calc_rxrv) THEN
-            CALL build_com_mom_nl(qs_kind_set, sab_orb, sap_ppnl, eps_ppnl, particle_set, cell, matrix_rv=matrix_rv, &
-                                  ref_point=ref_point)
-         ELSE IF (calc_rrv .AND. .NOT. calc_rv .AND. .NOT. calc_rxrv) THEN
-            CALL build_com_mom_nl(qs_kind_set, sab_orb, sap_ppnl, eps_ppnl, particle_set, cell, matrix_rrv=matrix_rrv, &
-                                  ref_point=ref_point)
-         ELSE IF (calc_rxrv .AND. .NOT. calc_rv .AND. .NOT. calc_rrv) THEN
-            CALL build_com_mom_nl(qs_kind_set, sab_orb, sap_ppnl, eps_ppnl, particle_set, cell, matrix_rxrv=matrix_rxrv, &
-                                  ref_point=ref_point)
-         END IF
+      IF (calc_rrv) THEN
+         CALL dbcsr_allocate_matrix_set(matrix_rrv, 6)
+         DO ind = 1, 6
+            CALL dbcsr_init_p(matrix_rrv(ind)%matrix)
+            CALL dbcsr_create(matrix_rrv(ind)%matrix, template=matrix_s(1)%matrix, &
+                              matrix_type=dbcsr_type_antisymmetric)
+            CALL cp_dbcsr_alloc_block_from_nbl(matrix_rrv(ind)%matrix, sab_orb)
+            CALL dbcsr_set(matrix_rrv(ind)%matrix, 0._dp)
+         END DO
+      END IF
+
+      IF (calc_rvr) THEN
+         CALL dbcsr_allocate_matrix_set(matrix_rvr, 6) 
+         DO ind = 1, 6
+            CALL dbcsr_init_p(matrix_rvr(ind)%matrix)
+            CALL dbcsr_create(matrix_rvr(ind)%matrix, template=matrix_s(1)%matrix, &
+                              matrix_type=dbcsr_type_symmetric)
+            CALL cp_dbcsr_alloc_block_from_nbl(matrix_rvr(ind)%matrix, sab_orb)
+            CALL dbcsr_set(matrix_rvr(ind)%matrix, 0._dp)
+         END DO
+      END IF
+
+      IF (calc_rrv_vrr) THEN
+         CALL dbcsr_allocate_matrix_set(matrix_rrv_vrr, 6)
+         DO ind = 1, 6
+            CALL dbcsr_init_p(matrix_rrv_vrr(ind)%matrix)
+            CALL dbcsr_create(matrix_rrv_vrr(ind)%matrix, template=matrix_s(1)%matrix, &
+                              matrix_type=dbcsr_type_symmetric)
+            CALL cp_dbcsr_alloc_block_from_nbl(matrix_rrv_vrr(ind)%matrix, sab_orb)
+            CALL dbcsr_set(matrix_rrv_vrr(ind)%matrix, 0._dp)
+         END DO
+      END IF
+      
+      ! calculate evaluation of operators in AO basis set
+      CALL build_com_mom_nl(qs_kind_set, sab_orb, sap_ppnl, eps_ppnl, particle_set, cell, matrix_rv=matrix_rv, &
+                                  matrix_rxrv=matrix_rxrv, matrix_rrv=matrix_rrv, matrix_rvr=matrix_rvr, &
+                                  matrix_rrv_vrr=matrix_rrv_vrr,ref_point=ref_point)
+      ! calculate evaluation of operators in AO basis set
+     !    IF (calc_rv .AND. calc_rrv .AND. .NOT. calc_rxrv) THEN
+     !       CALL build_com_mom_nl(qs_kind_set, sab_orb, sap_ppnl, eps_ppnl, particle_set, cell, matrix_rv=matrix_rv, &
+     !                             matrix_rrv=matrix_rrv, ref_point=ref_point)
+     !    ELSE IF (calc_rv .AND. calc_rxrv .AND. .NOT. calc_rrv) THEN
+     !       CALL build_com_mom_nl(qs_kind_set, sab_orb, sap_ppnl, eps_ppnl, particle_set, cell, matrix_rv=matrix_rv, &
+     !                             matrix_rxrv=matrix_rxrv, ref_point=ref_point)
+     !    ELSE IF (calc_rrv .AND. calc_rxrv .AND. .NOT. calc_rv) THEN
+     !       CALL build_com_mom_nl(qs_kind_set, sab_orb, sap_ppnl, eps_ppnl, particle_set, cell, matrix_rxrv=matrix_rxrv, &
+     !                             matrix_rrv=matrix_rrv, ref_point=ref_point)
+     !    ELSE IF (calc_rv .AND. calc_rxrv .AND. calc_rrv) THEN
+     !       CALL build_com_mom_nl(qs_kind_set, sab_orb, sap_ppnl, eps_ppnl, particle_set, cell, matrix_rv=matrix_rv, &
+     !                             matrix_rxrv=matrix_rxrv, matrix_rrv=matrix_rrv, ref_point=ref_point)
+     !    ELSE IF (calc_rv .AND. .NOT. calc_rrv .AND. .NOT. calc_rxrv) THEN
+     !       CALL build_com_mom_nl(qs_kind_set, sab_orb, sap_ppnl, eps_ppnl, particle_set, cell, matrix_rv=matrix_rv, &
+     !                             ref_point=ref_point)
+     !    ELSE IF (calc_rrv .AND. .NOT. calc_rv .AND. .NOT. calc_rxrv) THEN
+     !       CALL build_com_mom_nl(qs_kind_set, sab_orb, sap_ppnl, eps_ppnl, particle_set, cell, matrix_rrv=matrix_rrv, &
+     !                             ref_point=ref_point)
+     !    ELSE IF (calc_rxrv .AND. .NOT. calc_rv .AND. .NOT. calc_rrv) THEN
+     !       CALL build_com_mom_nl(qs_kind_set, sab_orb, sap_ppnl, eps_ppnl, particle_set, cell, matrix_rxrv=matrix_rxrv, &
+     !                             ref_point=ref_point)
+     !    END IF
+
+      ! Calculate expectation values
+      ! Real part
+
+
+
+      ! imagninary part of the density matrix
 
          NULLIFY (rho_ao)
          CALL qs_rho_get(rho, rho_ao_im=rho_ao)
@@ -2504,9 +2572,10 @@ CONTAINS
          END IF
          CALL dbcsr_deallocate_matrix(tmp_ao)
          IF (calc_rv) CALL dbcsr_deallocate_matrix_set(matrix_rv)
-         IF (calc_rrv) CALL dbcsr_deallocate_matrix_set(matrix_rrv)
          IF (calc_rxrv) CALL dbcsr_deallocate_matrix_set(matrix_rxrv)
-      END IF ! qs_env%run_rtp
+         IF (calc_rrv) CALL dbcsr_deallocate_matrix_set(matrix_rrv)
+         IF (calc_rvr) CALL dbcsr_deallocate_matrix_set(matrix_rvr)
+         IF (calc_rrv_vrr) CALL dbcsr_deallocate_matrix_set(matrix_rrv_vrr)
 
       CALL timestop(handle)
    END SUBROUTINE calculate_commutator_nl_terms
