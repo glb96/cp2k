@@ -179,7 +179,7 @@ CONTAINS
             field = field + strength*pol(:)
          END IF
       END DO
-      
+
    END SUBROUTINE make_field
 
 ! **************************************************************************************************

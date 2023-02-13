@@ -42,7 +42,6 @@ MODULE rt_propagation_velocity_gauge
    USE kpoint_types,                    ONLY: get_kpoint_info,&
                                               kpoint_type
    USE mathconstants,                   ONLY: one,&
-                                              twopi,&
                                               zero
    USE orbital_pointers,                ONLY: init_orbital_pointers,&
                                               nco,&
@@ -253,16 +252,16 @@ CONTAINS
 
 ! **************************************************************************************************
 !> \brief Update the vector potential in the case where a time-dependant
-!>        electric field is apply. 
+!>        electric field is apply.
+!> \param qs_env ...
 !> \param dft_control ...
-!> \param cell ...
-!> \param vec_pot ...
 ! **************************************************************************************************
    SUBROUTINE update_vector_potential(qs_env, dft_control)
-      TYPE(qs_environment_type), POINTER, INTENT(INOUT)  :: qs_env
-      TYPE(dft_control_type), POINTER, INTENT(INOUT)     :: dft_control
-      REAL(kind=dp)                                      :: field(3)
+      TYPE(qs_environment_type), INTENT(INOUT), POINTER  :: qs_env
+      TYPE(dft_control_type), INTENT(INOUT), POINTER     :: dft_control
+
       REAL(dp)                                           :: c
+      REAL(kind=dp)                                      :: field(3)
 
       c = 137.03599962875_dp
       CALL make_field(dft_control, field, qs_env%sim_step, qs_env%sim_time)

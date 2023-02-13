@@ -74,8 +74,8 @@ MODULE rt_propagation_methods
    USE rt_propagation_utils,            ONLY: calc_S_derivs,&
                                               calc_update_rho,&
                                               calc_update_rho_sparse
-   USE rt_propagation_velocity_gauge,   ONLY: velocity_gauge_ks_matrix,&  
-                                              update_vector_potential
+   USE rt_propagation_velocity_gauge,   ONLY: update_vector_potential,&
+                                              velocity_gauge_ks_matrix
 #include "../base/base_uses.f90"
 
    IMPLICIT NONE
@@ -104,7 +104,6 @@ CONTAINS
 
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(rt_prop_type), POINTER                        :: rtp
-      TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(rtp_control_type), POINTER                    :: rtp_control
 
       CHARACTER(len=*), PARAMETER                        :: routineN = 'propagation_step'
@@ -115,6 +114,7 @@ CONTAINS
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: delta_P, H_last_iter, ks_mix, ks_mix_im, &
                                                             matrix_ks, matrix_ks_im, matrix_s, &
                                                             rho_new
+      TYPE(dft_control_type), POINTER                    :: dft_control
 
       CALL timeset(routineN, handle)
 
@@ -138,7 +138,7 @@ CONTAINS
          ! should be called imediately after qs_energies_init and before qs_ks_update_qs_env
          IF (rtp_control%velocity_gauge) THEN
             CALL get_qs_env(qs_env, dft_control=dft_control)
-            IF (dft_control%apply_vector_potential) & 
+            IF (dft_control%apply_vector_potential) &
                CALL update_vector_potential(qs_env, dft_control)
             CALL velocity_gauge_ks_matrix(qs_env, subtract_nl_term=.FALSE.)
          END IF
@@ -430,7 +430,7 @@ CONTAINS
                CALL dbcsr_desymmetrize(matrix_ks_im(ispin)%matrix, matrix_ks_nosym)
 
                ! take care of the EMD case and add the velocity scaled S_derivative
-               IF (.NOT. rtp_control%fixed_ions) THEN 
+               IF (.NOT. rtp_control%fixed_ions) THEN
                   CALL get_rtp(rtp=rtp, B_mat=B_mat, SinvB=SinvB)
                   CALL dbcsr_add(matrix_ks_nosym, B_mat, 1.0_dp, -1.0_dp)
                END IF
