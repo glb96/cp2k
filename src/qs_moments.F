@@ -2292,7 +2292,8 @@ CONTAINS
                CALL dbcsr_set(moments_der(i, idir)%matrix, 0.0_dp)
             END DO
          END DO
-         CALL build_local_moments_der_matrix(qs_env, moments, moments_der, 2, 1, rcc)
+         ! CALL build_local_moments_der_matrix(qs_env, moments, moments_der, 2, 1, rcc)
+         CALL build_local_moments_der_matrix(qs_env, moments, moments_der, 1, 1, rcc)
       ELSE
          CALL build_local_moment_matrix(qs_env, moments, nmom, ref_point=rcc)
       END IF
@@ -2409,8 +2410,6 @@ CONTAINS
       ! velocity representations
       IF (my_velreprs) THEN
          ALLOCATE (rmom_vel(nm))
-         WRITE(*, *) 'nm='
-         WRITE(*, *) nm
          rmom_vel = 0.0_dp
 
          DO order = 1, nmom
@@ -2524,12 +2523,14 @@ CONTAINS
       ELSE
          CALL print_moments(unit_number, nmom, rmom, rlab, rcc, cell, periodic=.FALSE.)
       END IF
-
+      
       IF (my_com_nl) THEN
          IF (magnetic) THEN
             mmom(:) = nlcom_rxrv(:)
          END IF
          IF (my_velreprs .AND. (nmom >= 1)) THEN
+            DEALLOCATE (rmom_vel)
+            ALLOCATE (rmom_vel(21))
             rmom_vel(1:3) = nlcom_rv
          END IF
          IF (my_velreprs .AND. (nmom >= 2)) THEN
@@ -2747,6 +2748,16 @@ CONTAINS
                      (TRIM(rlab(i + 1)), "=", rmom_vel(i), i=4, 6)
                   WRITE (unit_number, "(T17,3(A,A,E16.8,9X))") &
                      (TRIM(rlab(i + 1)), "=", rmom_vel(i), i=7, 9)
+                  WRITE (unit_number, "(T3,A)") "Expectation value of r x V_nl x r [a. u.]"
+                  WRITE (unit_number, "(T17,3(A,A,E16.8,9X))") &
+                     (TRIM(rlab(i + 1 - 6)), "=", rmom_vel(i), i=10, 12)
+                  WRITE (unit_number, "(T17,3(A,A,E16.8,9X))") &
+                     (TRIM(rlab(i + 1 - 6)), "=", rmom_vel(i), i=13, 15)
+                  WRITE (unit_number, "(T3,A)") "Expectation value of r x r x V_nl + V_nl x r x r [a. u.]"
+                  WRITE (unit_number, "(T17,3(A,A,E16.8,9X))") &
+                     (TRIM(rlab(i + 1 - 12)), "=", rmom_vel(i), i=16, 18)
+                  WRITE (unit_number, "(T17,3(A,A,E16.8,9X))") &
+                     (TRIM(rlab(i + 1 - 12)), "=", rmom_vel(i), i=19, 21)
                CASE DEFAULT
                END SELECT
             END DO
