@@ -18,7 +18,8 @@ MODULE rt_propagation_methods
    USE cp_cfm_types,                    ONLY: cp_cfm_create,&
                                               cp_cfm_release,&
                                               cp_cfm_type
-   USE cp_control_types,                ONLY: rtp_control_type
+   USE cp_control_types,                ONLY: dft_control_type,&
+                                              rtp_control_type
    USE cp_dbcsr_cholesky,               ONLY: cp_dbcsr_cholesky_decompose,&
                                               cp_dbcsr_cholesky_invert
    USE cp_dbcsr_operations,             ONLY: cp_dbcsr_sm_fm_multiply,&
@@ -73,7 +74,8 @@ MODULE rt_propagation_methods
    USE rt_propagation_utils,            ONLY: calc_S_derivs,&
                                               calc_update_rho,&
                                               calc_update_rho_sparse
-   USE rt_propagation_velocity_gauge,   ONLY: velocity_gauge_ks_matrix
+   USE rt_propagation_velocity_gauge,   ONLY: update_vector_potential,&
+                                              velocity_gauge_ks_matrix
 #include "../base/base_uses.f90"
 
    IMPLICIT NONE
@@ -112,6 +114,7 @@ CONTAINS
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: delta_P, H_last_iter, ks_mix, ks_mix_im, &
                                                             matrix_ks, matrix_ks_im, matrix_s, &
                                                             rho_new
+      TYPE(dft_control_type), POINTER                    :: dft_control
 
       CALL timeset(routineN, handle)
 
@@ -134,6 +137,9 @@ CONTAINS
          ! add additional terms for the velocity gauge to matrix_h and matrix_h_im
          ! should be called imediately after qs_energies_init and before qs_ks_update_qs_env
          IF (rtp_control%velocity_gauge) THEN
+            CALL get_qs_env(qs_env, dft_control=dft_control)
+            IF (dft_control%apply_vector_potential) &
+               CALL update_vector_potential(qs_env, dft_control)
             CALL velocity_gauge_ks_matrix(qs_env, subtract_nl_term=.FALSE.)
          END IF
 
@@ -415,8 +421,7 @@ CONTAINS
             CALL dbcsr_copy(SinvH(ispin)%matrix, exp_H(im)%matrix)
          END IF
       END DO
-      IF (rtp%track_imag_density) THEN
-         CALL get_rtp(rtp=rtp, B_mat=B_mat, SinvB=SinvB)
+      IF (.NOT. rtp_control%fixed_ions .OR. rtp%do_hfx .OR. rtp_control%velocity_gauge) THEN
          IF (rtp%do_hfx .OR. rtp_control%velocity_gauge) THEN
             DO ispin = 1, SIZE(matrix_ks)
                re = ispin*2 - 1
@@ -425,8 +430,10 @@ CONTAINS
                CALL dbcsr_desymmetrize(matrix_ks_im(ispin)%matrix, matrix_ks_nosym)
 
                ! take care of the EMD case and add the velocity scaled S_derivative
-               IF (.NOT. rtp_control%fixed_ions) &
+               IF (.NOT. rtp_control%fixed_ions) THEN
+                  CALL get_rtp(rtp=rtp, B_mat=B_mat, SinvB=SinvB)
                   CALL dbcsr_add(matrix_ks_nosym, B_mat, 1.0_dp, -1.0_dp)
+               END IF
 
                CALL dbcsr_multiply("N", "N", -one, S_inv, matrix_ks_nosym, zero, exp_H(re)%matrix, &
                                    filter_eps=rtp%filter_eps)
@@ -437,7 +444,7 @@ CONTAINS
          ELSE
             ! in case of pure EMD its only needed once as B is the same for both spins
             CALL dbcsr_multiply("N", "N", one, S_inv, B_mat, zero, exp_H(1)%matrix, filter_eps=rtp%filter_eps)
-
+            CALL get_rtp(rtp=rtp, B_mat=B_mat, SinvB=SinvB)
             CALL dbcsr_copy(SinvB(1)%matrix, exp_H(1)%matrix)
 
             IF (SIZE(matrix_ks) == 2) CALL dbcsr_copy(exp_H(3)%matrix, exp_H(1)%matrix)
