@@ -76,7 +76,7 @@ CONTAINS
 
       NULLIFY (dft_control, para_env, rho_r)
       CALL timeset(routineN, handle)
-
+      WRITE(*, *) 'efield_potential called!!!'
       CALL get_qs_env(qs_env, &
                       energy=energy, &
                       rho=rho, &
@@ -111,6 +111,9 @@ CONTAINS
       END DO
       CALL para_env%group%sum(efield_ener)
       energy%efield = efield_ener
+
+      WRITE(*, *) 'energy%efield from ef.F', energy%efield
+
       CALL timestop(handle)
 
    END SUBROUTINE efield_potential

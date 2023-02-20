@@ -29,8 +29,13 @@ MODULE rt_propagation_velocity_gauge
                                               dbcsr_init_p,&
                                               dbcsr_p_type,&
                                               dbcsr_set,&
+                                              dbcsr_trace,&
+                                              dbcsr_type,&
+                                              dbcsr_multiply,&
+                                              dbcsr_type_no_symmetry,&
                                               dbcsr_type_antisymmetric,&
-                                              dbcsr_type_symmetric
+                                              dbcsr_type_symmetric,&
+                                              dbcsr_deallocate_matrix
    USE efield_utils,                    ONLY: make_field
    USE external_potential_types,        ONLY: gth_potential_p_type,&
                                               gth_potential_type,&
@@ -47,6 +52,7 @@ MODULE rt_propagation_velocity_gauge
                                               nco,&
                                               ncoset
    USE particle_types,                  ONLY: particle_type
+   USE qs_energy_types,                 ONLY: qs_energy_type
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
    USE qs_force_types,                  ONLY: qs_force_type
@@ -94,21 +100,21 @@ CONTAINS
 
       CHARACTER(len=*), PARAMETER :: routineN = 'velocity_gauge_ks_matrix'
 
-      INTEGER                                            :: handle, idir, image, nder, nimages
+      INTEGER                                            :: handle, idir, image, nder, nimages, ispin
       INTEGER, DIMENSION(:, :, :), POINTER               :: cell_to_index
       LOGICAL                                            :: calculate_forces, my_subtract_nl_term, &
                                                             ppnl_present, use_virial
-      REAL(KIND=dp)                                      :: eps_ppnl, factor
-      REAL(KIND=dp), DIMENSION(3)                        :: vec_pot
+      REAL(KIND=dp)                                      :: eps_ppnl, factor, strace, trace, eval_nl_term
+      REAL(KIND=dp), DIMENSION(3)                        :: vec_pot, eval_momentum
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(cell_type), POINTER                           :: cell
-      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: momentum, nl_term
+      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: momentum, nl_term, rho_ao, rho_ao_im
       TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_h, matrix_h_im, matrix_nl, &
                                                             matrix_p, matrix_s
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(kpoint_type), POINTER                         :: kpoints
       TYPE(neighbor_list_set_p_type), DIMENSION(:), &
-         POINTER                                         :: sab_orb, sap_ppnl
+         POINTER                                         :: sab_orb, sab_all, sap_ppnl
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
       TYPE(qs_force_type), DIMENSION(:), POINTER         :: force
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
@@ -116,6 +122,8 @@ CONTAINS
       TYPE(qs_rho_type), POINTER                         :: rho
       TYPE(section_vals_type), POINTER                   :: input
       TYPE(virial_type), POINTER                         :: virial
+      TYPE(qs_energy_type), POINTER                      :: energy
+      TYPE(dbcsr_type), POINTER                          :: tmp_ao
 
       CALL timeset(routineN, handle)
 
@@ -125,17 +133,28 @@ CONTAINS
       IF (PRESENT(subtract_nl_term)) my_subtract_nl_term = subtract_nl_term
 
       NULLIFY (dft_control, matrix_s, sab_orb, matrix_h, cell, input, matrix_h_im, kpoints, cell_to_index, &
-               sap_ppnl, particle_set, qs_kind_set, atomic_kind_set, virial, force, matrix_p, rho, matrix_nl)
+               sap_ppnl, particle_set, qs_kind_set, atomic_kind_set, virial, force, matrix_p, rho, matrix_nl, &
+               tmp_ao, sab_all)
 
       CALL get_qs_env(qs_env, &
+                      energy=energy, &
+                      rho=rho, &
                       dft_control=dft_control, &
                       sab_orb=sab_orb, &
+                      sab_all=sab_all, &
                       sap_ppnl=sap_ppnl, &
                       matrix_s_kp=matrix_s, &
                       matrix_h_kp=matrix_h, &
                       cell=cell, &
                       input=input, &
                       matrix_h_im_kp=matrix_h_im)
+      
+      CALL qs_rho_get(rho, rho_ao=rho_ao, rho_ao_im=rho_ao_im)
+
+      CALL dbcsr_init_p(tmp_ao)
+      CALL dbcsr_create(tmp_ao, template=matrix_s(1, 1)%matrix, matrix_type=dbcsr_type_no_symmetry, name="tmp")
+      CALL cp_dbcsr_alloc_block_from_nbl(tmp_ao, sab_all)
+      CALL dbcsr_set(tmp_ao, 0.0_dp)
 
       nimages = dft_control%nimages
       ppnl_present = ASSOCIATED(sap_ppnl)
@@ -207,6 +226,23 @@ CONTAINS
             CALL dbcsr_add(matrix_h_im(1, image)%matrix, momentum(idir)%matrix, one, -vec_pot(idir))
          END DO
       END DO
+      
+      ! update energy with linear term wrt vector potential 
+      DO idir = 1, 3
+         strace = 0._dp
+         DO ispin = 1, dft_control%nspins
+            CALL dbcsr_set(tmp_ao, 0.0_dp)
+            CALL dbcsr_multiply("T", "N", 1.0_dp, rho_ao_im(ispin)%matrix, momentum(idir)%matrix, &
+                                            0.0_dp, tmp_ao)
+            CALL dbcsr_trace(tmp_ao, trace)
+            strace = strace + trace
+         END DO
+         eval_momentum(idir) = strace
+      END DO
+      WRITE(*, *) "eval_momentum",  eval_momentum
+      WRITE(*, *) "vec_pot" , vec_pot
+      WRITE(*, *) "-1.0_dp*DOT_PRODUCT(eval_momentum, vec_pot)" , -1.0_dp*DOT_PRODUCT(eval_momentum, vec_pot)
+      energy%efield = -1.0_dp*DOT_PRODUCT(eval_momentum, vec_pot)
 
       CALL dbcsr_deallocate_matrix_set(momentum)
 
@@ -219,6 +255,20 @@ CONTAINS
          CALL dbcsr_add(matrix_h(1, image)%matrix, matrix_s(1, image)%matrix, one, 0.5*factor)
       END DO
 
+      ! update energy with quadratic term wrt vector potential
+      strace = 0._dp
+      DO image = 1, nimages
+         DO ispin = 1, dft_control%nspins
+            CALL dbcsr_set(tmp_ao, 0.0_dp)
+            CALL dbcsr_multiply("T", "N", 1.0_dp, rho_ao(ispin)%matrix,  matrix_s(1, image)%matrix, &
+                                            0.0_dp, tmp_ao)
+            CALL dbcsr_trace(tmp_ao, trace)
+            strace = strace + trace
+         END DO
+      END DO
+      energy%efield = energy%efield + 0.5*strace*factor
+
+      ! add Non local term 
       IF (ppnl_present) THEN
          IF (dft_control%rtp_control%nl_gauge_transform) THEN
             NULLIFY (nl_term)
@@ -243,8 +293,29 @@ CONTAINS
                CALL dbcsr_add(matrix_h_im(1, image)%matrix, nl_term(2)%matrix, one, one)
             END DO
             CALL dbcsr_deallocate_matrix_set(nl_term)
+
+            ! Update energy
+            eval_nl_term = 0._dp
+            DO ispin = 1, dft_control%nspins
+               CALL dbcsr_set(tmp_ao, 0.0_dp)
+               CALL dbcsr_multiply("T", "N", 1.0_dp, rho_ao(ispin)%matrix,  nl_term(1)%matrix, &
+                                            0.0_dp, tmp_ao)
+               CALL dbcsr_trace(tmp_ao, trace)
+               eval_nl_term = eval_nl_term + trace
+
+               CALL dbcsr_set(tmp_ao, 0.0_dp)
+               CALL dbcsr_multiply("T", "N", 1.0_dp, rho_ao_im(ispin)%matrix,  nl_term(2)%matrix, &
+                                            0.0_dp, tmp_ao)
+               CALL dbcsr_trace(tmp_ao, trace)
+               eval_nl_term = eval_nl_term - trace
+            END DO
+            energy%efield = energy%efield + eval_nl_term
          END IF
       END IF
+      
+      WRITE(*, *) 'energy%efield from vg.F', energy%efield
+
+      CALL dbcsr_deallocate_matrix(tmp_ao)
 
       CALL timestop(handle)
 
@@ -262,7 +333,8 @@ CONTAINS
 
       REAL(dp)                                           :: c
       REAL(kind=dp)                                      :: field(3)
-
+      
+      WRITE(*, *) 'update vector potential'
       c = 137.03599962875_dp
       CALL make_field(dft_control, field, qs_env%sim_step, qs_env%sim_time)
       dft_control%rtp_control%vec_pot = dft_control%rtp_control%vec_pot - field*qs_env%rtp%dt

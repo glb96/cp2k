@@ -638,7 +638,7 @@ CONTAINS
          energy%exc = energy%exc - ekin_mol
 
       END IF
-
+      
       ! ***  Single atom contributions ***
       IF (.NOT. just_energy) THEN
          IF (calculate_forces) THEN
@@ -1140,6 +1140,7 @@ CONTAINS
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(qs_energy_type), POINTER                      :: energy
       TYPE(qs_rho_type), POINTER                         :: rho
+      REAL(KIND=dp)                                      :: energy_core_im
 
       CALL timeset(routineN, handle)
       NULLIFY (energy, rho, dft_control, rho_ao_kp, matrixkp_t, matrixkp_h)
@@ -1154,6 +1155,17 @@ CONTAINS
       CALL qs_rho_get(rho, rho_ao_kp=rho_ao_kp)
 
       CALL calculate_ptrace(matrixkp_h, rho_ao_kp, energy%core, dft_control%nspins)
+      
+      ! Add the imaginary part?
+      IF (qs_env%run_rtp) THEN 
+         IF (dft_control%rtp_control%velocity_gauge) THEN
+            CALL get_qs_env(qs_env, matrix_h_im_kp=matrixkp_h)
+            CALL qs_rho_get(rho, rho_ao_im_kp=rho_ao_kp)
+            CALL calculate_ptrace(matrixkp_h, rho_ao_kp, energy_core_im, dft_control%nspins)
+            WRITE(*, *) 'energy%core avant:' , energy%core , 'correction partie im:', -energy_core_im
+            energy%core = energy%core - energy_core_im
+         END IF
+      END IF 
 
       ! kinetic energy
       IF (ASSOCIATED(matrixkp_t)) &
