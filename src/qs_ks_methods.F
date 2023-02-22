@@ -45,7 +45,7 @@ MODULE qs_ks_methods
    USE dbcsr_api,                       ONLY: &
         dbcsr_add, dbcsr_copy, dbcsr_create, dbcsr_filter, dbcsr_get_info, dbcsr_multiply, &
         dbcsr_p_type, dbcsr_release, dbcsr_set, dbcsr_type, dbcsr_type_antisymmetric, &
-        dbcsr_type_symmetric
+        dbcsr_type_symmetric, dbcsr_print
    USE dft_plus_u,                      ONLY: plus_u
    USE efield_utils,                    ONLY: efield_potential
    USE hartree_local_methods,           ONLY: Vh_1c_gg_integrals
@@ -1161,9 +1161,10 @@ CONTAINS
          IF (dft_control%rtp_control%velocity_gauge) THEN
             CALL get_qs_env(qs_env, matrix_h_im_kp=matrixkp_h)
             CALL qs_rho_get(rho, rho_ao_im_kp=rho_ao_kp)
+            !CALL dbcsr_print(rho_ao_kp(1, 1)%matrix)
             CALL calculate_ptrace(matrixkp_h, rho_ao_kp, energy_core_im, dft_control%nspins)
             WRITE(*, *) 'energy%core avant:' , energy%core , 'correction partie im:', -energy_core_im
-            energy%core = energy%core - energy_core_im
+            energy%core = energy%core - energy_core_im !GLB!
          END IF
       END IF 
 

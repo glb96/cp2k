@@ -35,7 +35,8 @@ MODULE rt_propagation_velocity_gauge
                                               dbcsr_type_no_symmetry,&
                                               dbcsr_type_antisymmetric,&
                                               dbcsr_type_symmetric,&
-                                              dbcsr_deallocate_matrix
+                                              dbcsr_deallocate_matrix,&
+                                              dbcsr_print
    USE efield_utils,                    ONLY: make_field
    USE external_potential_types,        ONLY: gth_potential_p_type,&
                                               gth_potential_type,&
@@ -104,7 +105,7 @@ CONTAINS
       INTEGER, DIMENSION(:, :, :), POINTER               :: cell_to_index
       LOGICAL                                            :: calculate_forces, my_subtract_nl_term, &
                                                             ppnl_present, use_virial
-      REAL(KIND=dp)                                      :: eps_ppnl, factor, strace, trace, eval_nl_term
+      REAL(KIND=dp)                                      :: eps_ppnl, factor, strace, trace
       REAL(KIND=dp), DIMENSION(3)                        :: vec_pot, eval_momentum
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
       TYPE(cell_type), POINTER                           :: cell
@@ -232,16 +233,20 @@ CONTAINS
          strace = 0._dp
          DO ispin = 1, dft_control%nspins
             CALL dbcsr_set(tmp_ao, 0.0_dp)
+            !CALL dbcsr_print(rho_ao(ispin)%matrix)
+            !CALL dbcsr_print(rho_ao_im(ispin)%matrix)
+            !CALL dbcsr_print(momentum(idir)%matrix)
             CALL dbcsr_multiply("T", "N", 1.0_dp, rho_ao_im(ispin)%matrix, momentum(idir)%matrix, &
                                             0.0_dp, tmp_ao)
             CALL dbcsr_trace(tmp_ao, trace)
+            WRITE(*, *) "trace",  trace
             strace = strace + trace
          END DO
          eval_momentum(idir) = strace
       END DO
-      WRITE(*, *) "eval_momentum",  eval_momentum
-      WRITE(*, *) "vec_pot" , vec_pot
-      WRITE(*, *) "-1.0_dp*DOT_PRODUCT(eval_momentum, vec_pot)" , -1.0_dp*DOT_PRODUCT(eval_momentum, vec_pot)
+      !WRITE(*, *) "eval_momentum",  eval_momentum
+      !WRITE(*, *) "vec_pot" , vec_pot
+      !WRITE(*, *) "-1.0_dp*DOT_PRODUCT(eval_momentum, vec_pot)" , -1.0_dp*DOT_PRODUCT(eval_momentum, vec_pot)
       energy%efield = -1.0_dp*DOT_PRODUCT(eval_momentum, vec_pot)
 
       CALL dbcsr_deallocate_matrix_set(momentum)
@@ -251,6 +256,7 @@ CONTAINS
       DO idir = 1, 3
          factor = factor + vec_pot(idir)**2
       END DO
+
       DO image = 1, nimages
          CALL dbcsr_add(matrix_h(1, image)%matrix, matrix_s(1, image)%matrix, one, 0.5*factor)
       END DO
@@ -266,6 +272,8 @@ CONTAINS
             strace = strace + trace
          END DO
       END DO
+      !WRITE(*, *) "strace for quadratic term",  strace
+      !WRITE(*, *) "factor" , factor
       energy%efield = energy%efield + 0.5*strace*factor
 
       ! add Non local term 
@@ -295,21 +303,21 @@ CONTAINS
             CALL dbcsr_deallocate_matrix_set(nl_term)
 
             ! Update energy
-            eval_nl_term = 0._dp
-            DO ispin = 1, dft_control%nspins
-               CALL dbcsr_set(tmp_ao, 0.0_dp)
-               CALL dbcsr_multiply("T", "N", 1.0_dp, rho_ao(ispin)%matrix,  nl_term(1)%matrix, &
-                                            0.0_dp, tmp_ao)
-               CALL dbcsr_trace(tmp_ao, trace)
-               eval_nl_term = eval_nl_term + trace
-
-               CALL dbcsr_set(tmp_ao, 0.0_dp)
-               CALL dbcsr_multiply("T", "N", 1.0_dp, rho_ao_im(ispin)%matrix,  nl_term(2)%matrix, &
-                                            0.0_dp, tmp_ao)
-               CALL dbcsr_trace(tmp_ao, trace)
-               eval_nl_term = eval_nl_term - trace
-            END DO
-            energy%efield = energy%efield + eval_nl_term
+            !eval_nl_term = 0._dp
+            !DO ispin = 1, dft_control%nspins
+            !   CALL dbcsr_set(tmp_ao, 0.0_dp)
+            !   CALL dbcsr_multiply("T", "N", 1.0_dp, rho_ao(ispin)%matrix,  nl_term(1)%matrix, &
+            !                                0.0_dp, tmp_ao)
+            !   CALL dbcsr_trace(tmp_ao, trace)
+            !   eval_nl_term = eval_nl_term + trace
+            !
+            !    CALL dbcsr_set(tmp_ao, 0.0_dp)
+            !    CALL dbcsr_multiply("T", "N", 1.0_dp, rho_ao_im(ispin)%matrix,  nl_term(2)%matrix, &
+            !                                0.0_dp, tmp_ao)
+            !   CALL dbcsr_trace(tmp_ao, trace)
+            !   eval_nl_term = eval_nl_term - trace
+            !END DO
+            !energy%efield = energy%efield + eval_nl_term
          END IF
       END IF
       

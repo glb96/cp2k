@@ -17,6 +17,12 @@ MODULE efield_utils
    USE cp_control_types,                ONLY: dft_control_type,&
                                               efield_type
    USE cp_para_types,                   ONLY: cp_para_env_type
+   USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set,&
+                                              dbcsr_deallocate_matrix_set
+   USE dbcsr_api,                       ONLY: &
+        dbcsr_copy, dbcsr_create, dbcsr_deallocate_matrix, dbcsr_distribution_type, dbcsr_dot, &
+        dbcsr_get_block_p, dbcsr_init_p, dbcsr_multiply, dbcsr_p_type, dbcsr_set, dbcsr_trace, &
+        dbcsr_type, dbcsr_type_antisymmetric, dbcsr_type_no_symmetry, dbcsr_type_symmetric,dbcsr_add
    USE input_constants,                 ONLY: constant_env,&
                                               custom_env,&
                                               gaussian_env,&
@@ -32,6 +38,7 @@ MODULE efield_utils
    USE qs_force_types,                  ONLY: qs_force_type
    USE qs_kind_types,                   ONLY: get_qs_kind,&
                                               qs_kind_type
+   USE qs_moments,                      ONLY: build_local_moment_matrix
    USE qs_rho_types,                    ONLY: qs_rho_get,&
                                               qs_rho_type
 #include "./base/base_uses.f90"
@@ -45,6 +52,7 @@ MODULE efield_utils
 ! *** Public subroutines ***
 
    PUBLIC :: efield_potential, &
+             efield_lengh_gauge, &
              calculate_ecore_efield, &
              make_field
 
@@ -101,7 +109,7 @@ CONTAINS
                grid_p(1) = (i - bo_global(1, 1))*dr(1)
                grid_p(2) = (j - bo_global(1, 2))*dr(2)
                grid_p(3) = (k - bo_global(1, 3))*dr(3)
-               v_efield_rspace%cr3d(i, j, k) = v_efield_rspace%cr3d(i, j, k) + DOT_PRODUCT(field(:), grid_p(:))
+               ! v_efield_rspace%cr3d(i, j, k) = v_efield_rspace%cr3d(i, j, k) + DOT_PRODUCT(field(:), grid_p(:))
             END DO
          END DO
       END DO
@@ -111,12 +119,72 @@ CONTAINS
       END DO
       CALL para_env%group%sum(efield_ener)
       energy%efield = efield_ener
-
-      WRITE(*, *) 'energy%efield from ef.F', energy%efield
-
+      
       CALL timestop(handle)
 
    END SUBROUTINE efield_potential
+
+! **************************************************************************************************
+!> \brief computes the time dependend potential on the grid
+!> \param qs_env ...
+!> \param v_efield_rspace ...
+!> \author Florian Schiffmann (02.09)
+! **************************************************************************************************
+
+   SUBROUTINE efield_lengh_gauge(qs_env)
+
+      TYPE(qs_environment_type), POINTER                 :: qs_env
+      CHARACTER(len=*), PARAMETER                        :: routineN = 'efield_lengh_gauge'
+
+      INTEGER                                            :: handle, i, ispin, image
+      REAL(kind=dp)                                      :: field(3), efield_ener_new, trace
+      TYPE(dft_control_type), POINTER                    :: dft_control
+      TYPE(qs_rho_type), POINTER                         :: rho
+      TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_h
+      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_s, rho_ao, moments
+
+      NULLIFY (dft_control)
+      CALL timeset(routineN, handle)
+      WRITE(*, *) 'efield_lengh_gauge called!!!'
+      CALL get_qs_env(qs_env, &
+                      rho=rho, &
+                      dft_control=dft_control, &
+                      matrix_h_kp=matrix_h,&
+                      matrix_s=matrix_s)
+
+      CALL qs_rho_get(rho, rho_ao=rho_ao)
+      NULLIFY (moments)
+      CALL dbcsr_allocate_matrix_set(moments, 3)
+      DO i = 1, 3
+         ALLOCATE (moments(i)%matrix)
+         CALL dbcsr_copy(moments(i)%matrix, matrix_s(1)%matrix, "Moments")
+         CALL dbcsr_set(moments(i)%matrix, 0.0_dp)
+      END DO
+
+      CALL build_local_moment_matrix(qs_env, moments, 1)
+
+      CALL make_field(dft_control, field, qs_env%sim_step, qs_env%sim_time)
+
+      DO i = 1, 3
+         DO image = 1, dft_control%nimages
+            CALL dbcsr_add(matrix_h(1, image)%matrix, moments(i)%matrix, 1.0_dp, field(i))
+         END DO
+      END DO
+
+      efield_ener_new = 0._dp
+      DO i = 1, 3
+         DO ispin = 1, dft_control%nspins
+            CALL dbcsr_dot(rho_ao(ispin)%matrix, moments(i)%matrix, trace)
+            efield_ener_new = efield_ener_new + trace*field(i)
+         END DO
+      END DO
+      WRITE(*, *) 'new energy%efield from ef.F', efield_ener_new
+      CALL dbcsr_deallocate_matrix_set(moments)
+      !END NEW
+
+      CALL timestop(handle)
+
+   END SUBROUTINE efield_lengh_gauge
 
 ! **************************************************************************************************
 !> \brief computes the amplitude of the efield within a given envelop
@@ -215,7 +283,8 @@ CONTAINS
       NULLIFY (dft_control)
       CALL timeset(routineN, handle)
       CALL get_qs_env(qs_env, dft_control=dft_control)
-      IF (dft_control%apply_efield_field .OR. dft_control%apply_vector_potential) THEN
+      !IF (dft_control%apply_efield_field .OR. dft_control%apply_vector_potential) THEN
+      IF (dft_control%apply_efield_field) THEN
          my_force = .FALSE.
          IF (PRESENT(calculate_forces)) my_force = calculate_forces
 
@@ -247,6 +316,8 @@ CONTAINS
 
          END DO
          energy%efield_core = efield_ener
+         !energy%efield_core = 0.0_dp !GLB!
+         WRITE(*, *) 'energy%efield_core from efied_utils', efield_ener
       END IF
       CALL timestop(handle)
    END SUBROUTINE calculate_ecore_efield

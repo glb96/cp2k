@@ -46,6 +46,7 @@ MODULE rt_propagation_methods
         dbcsr_iterator_blocks_left, dbcsr_iterator_next_block, dbcsr_iterator_start, &
         dbcsr_iterator_stop, dbcsr_iterator_type, dbcsr_multiply, dbcsr_p_type, dbcsr_release, &
         dbcsr_scale, dbcsr_set, dbcsr_transposed, dbcsr_type, dbcsr_type_antisymmetric
+   USE efield_utils,                    ONLY: efield_lengh_gauge
    USE input_constants,                 ONLY: do_arnoldi,&
                                               do_bch,&
                                               do_em,&
@@ -134,14 +135,18 @@ CONTAINS
          !the above recalculates matrix_s, but matrix not changed if ions are fixed
          IF (rtp_control%fixed_ions) CALL set_ks_env(qs_env%ks_env, s_mstruct_changed=.FALSE.)
 
-         ! add additional terms for the velocity gauge to matrix_h and matrix_h_im
+         ! add additional terms to matrix_h and matrix_h_im in the case  of applied electric field. 
+         ! Either in the lengh or velocity gauge.
          ! should be called imediately after qs_energies_init and before qs_ks_update_qs_env
+         CALL get_qs_env(qs_env, dft_control=dft_control)
+         IF (dft_control%apply_efield_field) &
+            CALL efield_lengh_gauge(qs_env)
          IF (rtp_control%velocity_gauge) THEN
-            CALL get_qs_env(qs_env, dft_control=dft_control)
             IF (dft_control%apply_vector_potential) &
                CALL update_vector_potential(qs_env, dft_control)
             CALL velocity_gauge_ks_matrix(qs_env, subtract_nl_term=.FALSE.)
          END IF
+
 
          CALL get_qs_env(qs_env, matrix_s=matrix_s)
          IF (.NOT. rtp_control%fixed_ions) THEN
