@@ -45,9 +45,8 @@ MODULE qs_ks_methods
    USE dbcsr_api,                       ONLY: &
         dbcsr_add, dbcsr_copy, dbcsr_create, dbcsr_filter, dbcsr_get_info, dbcsr_multiply, &
         dbcsr_p_type, dbcsr_release, dbcsr_set, dbcsr_type, dbcsr_type_antisymmetric, &
-        dbcsr_type_symmetric, dbcsr_print
+        dbcsr_type_symmetric
    USE dft_plus_u,                      ONLY: plus_u
-   USE efield_utils,                    ONLY: efield_potential
    USE hartree_local_methods,           ONLY: Vh_1c_gg_integrals
    USE hartree_local_types,             ONLY: ecoul_1center_type
    USE hfx_admm_utils,                  ONLY: hfx_admm_init,&
@@ -209,7 +208,7 @@ CONTAINS
       TYPE(pw_type), DIMENSION(:), POINTER               :: rho_r, v_rspace_embed, v_rspace_new, &
                                                             v_rspace_new_aux_fit, v_tau_rspace, &
                                                             v_tau_rspace_aux_fit
-      TYPE(pw_type), POINTER :: rho0_s_rs, rho_core, rho_nlcc, v_efield_rspace, v_hartree_rspace, &
+      TYPE(pw_type), POINTER :: rho0_s_rs, rho_core, rho_nlcc, v_hartree_rspace, &
          v_sccs_rspace, v_sic_rspace, v_spin_ddapc_rest_r, vee, vppl_rspace
       TYPE(qs_energy_type), POINTER                      :: energy
       TYPE(qs_ks_env_type), POINTER                      :: ks_env
@@ -423,17 +422,6 @@ CONTAINS
          END IF
       END IF
       CALL pw_pool_give_back_pw(auxbas_pw_pool, v_hartree_gspace)
-
-      IF (dft_control%apply_efield_field) THEN
-         NULLIFY (v_efield_rspace)
-         ALLOCATE (v_efield_rspace)
-         CALL pw_pool_create_pw(auxbas_pw_pool, &
-                                v_efield_rspace, &
-                                use_data=REALDATA3D, &
-                                in_space=REALSPACE)
-         CALL efield_potential(qs_env, v_efield_rspace)
-         CALL pw_scale(v_efield_rspace, v_efield_rspace%pw_grid%dvol)
-      END IF
 
       IF (dft_control%correct_surf_dip) THEN
          IF (dft_control%surf_dip_correct_switch) THEN
@@ -691,7 +679,7 @@ CONTAINS
 
          CALL sum_up_and_integrate(qs_env, ks_matrix, rho, my_rho, vppl_rspace, &
                                    v_rspace_new, v_rspace_new_aux_fit, v_tau_rspace, v_tau_rspace_aux_fit, &
-                                   v_efield_rspace, v_sic_rspace, v_spin_ddapc_rest_r, v_sccs_rspace, v_rspace_embed, &
+                                   v_sic_rspace, v_spin_ddapc_rest_r, v_sccs_rspace, v_rspace_embed, &
                                    cdft_control, calculate_forces)
 
          IF (use_virial .AND. calculate_forces) THEN
@@ -734,11 +722,6 @@ CONTAINS
       IF (dft_control%qs_control%ddapc_explicit_potential) THEN
          CALL pw_pool_give_back_pw(auxbas_pw_pool, v_spin_ddapc_rest_r)
          DEALLOCATE (v_spin_ddapc_rest_r)
-      END IF
-
-      IF (dft_control%apply_efield_field) THEN
-         CALL pw_pool_give_back_pw(auxbas_pw_pool, v_efield_rspace)
-         DEALLOCATE (v_efield_rspace)
       END IF
 
       IF (calculate_forces .AND. dft_control%qs_control%cdft) THEN
@@ -1156,15 +1139,13 @@ CONTAINS
 
       CALL calculate_ptrace(matrixkp_h, rho_ao_kp, energy%core, dft_control%nspins)
       
-      ! Add the imaginary part?
+      ! Add the imaginary part in the RTP case
       IF (qs_env%run_rtp) THEN 
          IF (dft_control%rtp_control%velocity_gauge) THEN
             CALL get_qs_env(qs_env, matrix_h_im_kp=matrixkp_h)
             CALL qs_rho_get(rho, rho_ao_im_kp=rho_ao_kp)
-            !CALL dbcsr_print(rho_ao_kp(1, 1)%matrix)
             CALL calculate_ptrace(matrixkp_h, rho_ao_kp, energy_core_im, dft_control%nspins)
-            WRITE(*, *) 'energy%core avant:' , energy%core , 'correction partie im:', -energy_core_im
-            energy%core = energy%core - energy_core_im !GLB!
+            energy%core = energy%core - energy_core_im
          END IF
       END IF 
 

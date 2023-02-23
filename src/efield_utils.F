@@ -19,19 +19,17 @@ MODULE efield_utils
    USE cp_para_types,                   ONLY: cp_para_env_type
    USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set,&
                                               dbcsr_deallocate_matrix_set
-   USE dbcsr_api,                       ONLY: &
-        dbcsr_copy, dbcsr_create, dbcsr_deallocate_matrix, dbcsr_distribution_type, dbcsr_dot, &
-        dbcsr_get_block_p, dbcsr_init_p, dbcsr_multiply, dbcsr_p_type, dbcsr_set, dbcsr_trace, &
-        dbcsr_type, dbcsr_type_antisymmetric, dbcsr_type_no_symmetry, dbcsr_type_symmetric,dbcsr_add
+   USE dbcsr_api,                       ONLY: dbcsr_p_type,&
+                                              dbcsr_copy,& 
+                                              dbcsr_set,& 
+                                              dbcsr_add
    USE input_constants,                 ONLY: constant_env,&
                                               custom_env,&
                                               gaussian_env,&
                                               ramp_env
-   USE kahan_sum,                       ONLY: accurate_dot_product
    USE kinds,                           ONLY: dp
    USE mathconstants,                   ONLY: pi
    USE particle_types,                  ONLY: particle_type
-   USE pw_types,                        ONLY: pw_type
    USE qs_energy_types,                 ONLY: qs_energy_type
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
@@ -39,8 +37,7 @@ MODULE efield_utils
    USE qs_kind_types,                   ONLY: get_qs_kind,&
                                               qs_kind_type
    USE qs_moments,                      ONLY: build_local_moment_matrix
-   USE qs_rho_types,                    ONLY: qs_rho_get,&
-                                              qs_rho_type
+
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -51,108 +48,40 @@ MODULE efield_utils
 
 ! *** Public subroutines ***
 
-   PUBLIC :: efield_potential, &
-             efield_lengh_gauge, &
+   PUBLIC :: efield_potential_lengh_gauge, &
              calculate_ecore_efield, &
              make_field
 
 CONTAINS
 
 ! **************************************************************************************************
-!> \brief computes the time dependend potential on the grid
+!> \brief Replace the original implementation of the electric-electronic
+!>        interaction in the lenght gauge. This calculation is no longer done in
+!>        the grid but using matrices to match the velocity gauge implementation.
+!>        Note: The energy is store in energy%core and computed later on.
 !> \param qs_env ...
-!> \param v_efield_rspace ...
-!> \author Florian Schiffmann (02.09)
+!> \author Guillaume Le Breton (02.23)
 ! **************************************************************************************************
 
-   SUBROUTINE efield_potential(qs_env, v_efield_rspace)
+   SUBROUTINE efield_potential_lengh_gauge(qs_env)
 
       TYPE(qs_environment_type), POINTER                 :: qs_env
-      TYPE(pw_type)                                      :: v_efield_rspace
+      CHARACTER(len=*), PARAMETER                        :: routineN = 'efield_potential_lengh_gauge'
 
-      CHARACTER(len=*), PARAMETER                        :: routineN = 'efield_potential'
-
-      INTEGER                                            :: handle, i, j, k
-      INTEGER, DIMENSION(2, 3)                           :: bo_global, bo_local
-      REAL(kind=dp)                                      :: dvol, efield_ener, field(3)
-      REAL(kind=dp), DIMENSION(3)                        :: dr, grid_p
-      TYPE(cp_para_env_type), POINTER                    :: para_env
+      INTEGER                                            :: handle, i, image
+      REAL(kind=dp)                                      :: field(3)
       TYPE(dft_control_type), POINTER                    :: dft_control
-      TYPE(pw_type), DIMENSION(:), POINTER               :: rho_r
-      TYPE(qs_energy_type), POINTER                      :: energy
-      TYPE(qs_rho_type), POINTER                         :: rho
-
-      NULLIFY (dft_control, para_env, rho_r)
-      CALL timeset(routineN, handle)
-      WRITE(*, *) 'efield_potential called!!!'
-      CALL get_qs_env(qs_env, &
-                      energy=energy, &
-                      rho=rho, &
-                      dft_control=dft_control, &
-                      para_env=para_env)
-
-      CALL qs_rho_get(rho, rho_r=rho_r)
-
-      v_efield_rspace%cr3d = 0.0_dp
-
-      bo_local = v_efield_rspace%pw_grid%bounds_local
-      bo_global = v_efield_rspace%pw_grid%bounds
-
-      dvol = v_efield_rspace%pw_grid%dvol
-      dr = v_efield_rspace%pw_grid%dr
-
-      CALL make_field(dft_control, field, qs_env%sim_step, qs_env%sim_time)
-
-      DO k = bo_local(1, 3), bo_local(2, 3)
-         DO j = bo_local(1, 2), bo_local(2, 2)
-            DO i = bo_local(1, 1), bo_local(2, 1)
-               grid_p(1) = (i - bo_global(1, 1))*dr(1)
-               grid_p(2) = (j - bo_global(1, 2))*dr(2)
-               grid_p(3) = (k - bo_global(1, 3))*dr(3)
-               ! v_efield_rspace%cr3d(i, j, k) = v_efield_rspace%cr3d(i, j, k) + DOT_PRODUCT(field(:), grid_p(:))
-            END DO
-         END DO
-      END DO
-      efield_ener = 0.0_dp
-      DO i = 1, dft_control%nspins
-         efield_ener = efield_ener + accurate_dot_product(v_efield_rspace%cr3d, rho_r(i)%cr3d)*dvol
-      END DO
-      CALL para_env%group%sum(efield_ener)
-      energy%efield = efield_ener
-      
-      CALL timestop(handle)
-
-   END SUBROUTINE efield_potential
-
-! **************************************************************************************************
-!> \brief computes the time dependend potential on the grid
-!> \param qs_env ...
-!> \param v_efield_rspace ...
-!> \author Florian Schiffmann (02.09)
-! **************************************************************************************************
-
-   SUBROUTINE efield_lengh_gauge(qs_env)
-
-      TYPE(qs_environment_type), POINTER                 :: qs_env
-      CHARACTER(len=*), PARAMETER                        :: routineN = 'efield_lengh_gauge'
-
-      INTEGER                                            :: handle, i, ispin, image
-      REAL(kind=dp)                                      :: field(3), efield_ener_new, trace
-      TYPE(dft_control_type), POINTER                    :: dft_control
-      TYPE(qs_rho_type), POINTER                         :: rho
       TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_h
-      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_s, rho_ao, moments
+      TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_s, moments
 
       NULLIFY (dft_control)
       CALL timeset(routineN, handle)
-      WRITE(*, *) 'efield_lengh_gauge called!!!'
+
       CALL get_qs_env(qs_env, &
-                      rho=rho, &
                       dft_control=dft_control, &
                       matrix_h_kp=matrix_h,&
                       matrix_s=matrix_s)
 
-      CALL qs_rho_get(rho, rho_ao=rho_ao)
       NULLIFY (moments)
       CALL dbcsr_allocate_matrix_set(moments, 3)
       DO i = 1, 3
@@ -171,20 +100,11 @@ CONTAINS
          END DO
       END DO
 
-      efield_ener_new = 0._dp
-      DO i = 1, 3
-         DO ispin = 1, dft_control%nspins
-            CALL dbcsr_dot(rho_ao(ispin)%matrix, moments(i)%matrix, trace)
-            efield_ener_new = efield_ener_new + trace*field(i)
-         END DO
-      END DO
-      WRITE(*, *) 'new energy%efield from ef.F', efield_ener_new
       CALL dbcsr_deallocate_matrix_set(moments)
-      !END NEW
 
       CALL timestop(handle)
 
-   END SUBROUTINE efield_lengh_gauge
+   END SUBROUTINE efield_potential_lengh_gauge
 
 ! **************************************************************************************************
 !> \brief computes the amplitude of the efield within a given envelop
@@ -254,7 +174,10 @@ CONTAINS
    END SUBROUTINE make_field
 
 ! **************************************************************************************************
-!> \brief computes the force and the energy due to a efield on the cores
+!> \brief Computes the force and the energy due to a efield on the cores
+!>        Note: In the velocity gauge, the energy term is not added because
+!>        it would lead to an unbalanced energy (center of negative charge not
+!>        computed in velocity gauge).
 !> \param qs_env ...
 !> \param calculate_forces ...
 !> \author Florian Schiffmann (02.09)
@@ -283,7 +206,6 @@ CONTAINS
       NULLIFY (dft_control)
       CALL timeset(routineN, handle)
       CALL get_qs_env(qs_env, dft_control=dft_control)
-      !IF (dft_control%apply_efield_field .OR. dft_control%apply_vector_potential) THEN
       IF (dft_control%apply_efield_field) THEN
          my_force = .FALSE.
          IF (PRESENT(calculate_forces)) my_force = calculate_forces
@@ -316,8 +238,6 @@ CONTAINS
 
          END DO
          energy%efield_core = efield_ener
-         !energy%efield_core = 0.0_dp !GLB!
-         WRITE(*, *) 'energy%efield_core from efied_utils', efield_ener
       END IF
       CALL timestop(handle)
    END SUBROUTINE calculate_ecore_efield
