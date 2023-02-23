@@ -129,7 +129,8 @@ CONTAINS
       NULLIFY (delta_P, rho_new, delta_mos, mos_new)
       NULLIFY (ks_mix, ks_mix_im)
       ! get everything needed and set some values
-      CALL get_qs_env(qs_env, matrix_s=matrix_s)
+      CALL get_qs_env(qs_env, matrix_s=matrix_s, dft_control=dft_control)
+
       IF (rtp%iter == 1) THEN
          CALL qs_energies_init(qs_env, .FALSE.)
          !the above recalculates matrix_s, but matrix not changed if ions are fixed
@@ -138,7 +139,6 @@ CONTAINS
          ! add additional terms to matrix_h and matrix_h_im in the case of applied electric field,
          ! either in the lengh or velocity gauge.
          ! should be called imediately after qs_energies_init and before qs_ks_update_qs_env
-         CALL get_qs_env(qs_env, dft_control=dft_control)
          IF (dft_control%apply_efield_field) &
             CALL efield_potential_lengh_gauge(qs_env)
          IF (rtp_control%velocity_gauge) THEN
@@ -289,7 +289,7 @@ CONTAINS
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: delta_P
 
       CHARACTER(len=*), PARAMETER                        :: routineN = 'step_finalize'
-
+      
       INTEGER                                            :: handle, i, ihist
       TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_new, mos_old
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: exp_H_new, exp_H_old, matrix_ks, &
@@ -299,7 +299,8 @@ CONTAINS
 
       CALL timeset(routineN, handle)
 
-      CALL get_qs_env(qs_env=qs_env, rtp=rtp, matrix_s=s_mat, matrix_ks=matrix_ks, matrix_ks_im=matrix_ks_im, energy=energy)
+      CALL get_qs_env(qs_env=qs_env, rtp=rtp, matrix_s=s_mat, &
+                      matrix_ks=matrix_ks, matrix_ks_im=matrix_ks_im, energy=energy)
       CALL get_rtp(rtp=rtp, exp_H_old=exp_H_old, exp_H_new=exp_H_new)
 
       IF (rtp_control%sc_check_start .LT. rtp%iter) THEN
@@ -426,7 +427,8 @@ CONTAINS
             CALL dbcsr_copy(SinvH(ispin)%matrix, exp_H(im)%matrix)
          END IF
       END DO
-      IF (.NOT. rtp_control%fixed_ions .OR. rtp%do_hfx .OR. rtp_control%velocity_gauge) THEN
+      IF (rtp%track_imag_density) THEN
+         CALL get_rtp(rtp=rtp, B_mat=B_mat, SinvB=SinvB)
          IF (rtp%do_hfx .OR. rtp_control%velocity_gauge) THEN
             DO ispin = 1, SIZE(matrix_ks)
                re = ispin*2 - 1
@@ -436,7 +438,6 @@ CONTAINS
 
                ! take care of the EMD case and add the velocity scaled S_derivative
                IF (.NOT. rtp_control%fixed_ions) THEN
-                  CALL get_rtp(rtp=rtp, B_mat=B_mat, SinvB=SinvB)
                   CALL dbcsr_add(matrix_ks_nosym, B_mat, 1.0_dp, -1.0_dp)
                END IF
 
