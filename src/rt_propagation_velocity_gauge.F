@@ -29,13 +29,8 @@ MODULE rt_propagation_velocity_gauge
                                               dbcsr_init_p,&
                                               dbcsr_p_type,&
                                               dbcsr_set,&
-                                              dbcsr_trace,&
-                                              dbcsr_type,&
-                                              dbcsr_multiply,&
-                                              dbcsr_type_no_symmetry,&
                                               dbcsr_type_antisymmetric,&
-                                              dbcsr_type_symmetric,&
-                                              dbcsr_deallocate_matrix
+                                              dbcsr_type_symmetric
    USE efield_utils,                    ONLY: make_field
    USE external_potential_types,        ONLY: gth_potential_p_type,&
                                               gth_potential_type,&
@@ -52,7 +47,6 @@ MODULE rt_propagation_velocity_gauge
                                               nco,&
                                               ncoset
    USE particle_types,                  ONLY: particle_type
-   USE qs_energy_types,                 ONLY: qs_energy_type
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
    USE qs_force_types,                  ONLY: qs_force_type
@@ -143,7 +137,7 @@ CONTAINS
                       cell=cell, &
                       input=input, &
                       matrix_h_im_kp=matrix_h_im)
-      
+
       nimages = dft_control%nimages
       ppnl_present = ASSOCIATED(sap_ppnl)
 
@@ -227,7 +221,7 @@ CONTAINS
          CALL dbcsr_add(matrix_h(1, image)%matrix, matrix_s(1, image)%matrix, one, 0.5*factor)
       END DO
 
-      ! add Non local term 
+      ! add Non local term
       IF (ppnl_present) THEN
          IF (dft_control%rtp_control%nl_gauge_transform) THEN
             NULLIFY (nl_term)
@@ -254,7 +248,7 @@ CONTAINS
             CALL dbcsr_deallocate_matrix_set(nl_term)
          END IF
       END IF
-      
+
       CALL timestop(handle)
 
    END SUBROUTINE velocity_gauge_ks_matrix
@@ -268,8 +262,9 @@ CONTAINS
    SUBROUTINE update_vector_potential(qs_env, dft_control)
       TYPE(qs_environment_type), INTENT(INOUT), POINTER  :: qs_env
       TYPE(dft_control_type), INTENT(INOUT), POINTER     :: dft_control
+
       REAL(kind=dp)                                      :: field(3)
-      
+
       CALL make_field(dft_control, field, qs_env%sim_step, qs_env%sim_time)
       dft_control%rtp_control%vec_pot = dft_control%rtp_control%vec_pot - field*qs_env%rtp%dt
 

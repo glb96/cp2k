@@ -16,13 +16,12 @@ MODULE efield_utils
                                               pbc
    USE cp_control_types,                ONLY: dft_control_type,&
                                               efield_type
-   USE cp_para_types,                   ONLY: cp_para_env_type
    USE cp_dbcsr_operations,             ONLY: dbcsr_allocate_matrix_set,&
                                               dbcsr_deallocate_matrix_set
-   USE dbcsr_api,                       ONLY: dbcsr_p_type,&
-                                              dbcsr_copy,& 
-                                              dbcsr_set,& 
-                                              dbcsr_add
+   USE dbcsr_api,                       ONLY: dbcsr_add,&
+                                              dbcsr_copy,&
+                                              dbcsr_p_type,&
+                                              dbcsr_set
    USE input_constants,                 ONLY: constant_env,&
                                               custom_env,&
                                               gaussian_env,&
@@ -37,7 +36,6 @@ MODULE efield_utils
    USE qs_kind_types,                   ONLY: get_qs_kind,&
                                               qs_kind_type
    USE qs_moments,                      ONLY: build_local_moment_matrix
-
 #include "./base/base_uses.f90"
 
    IMPLICIT NONE
@@ -66,20 +64,21 @@ CONTAINS
    SUBROUTINE efield_potential_lengh_gauge(qs_env)
 
       TYPE(qs_environment_type), POINTER                 :: qs_env
-      CHARACTER(len=*), PARAMETER                        :: routineN = 'efield_potential_lengh_gauge'
+
+      CHARACTER(len=*), PARAMETER :: routineN = 'efield_potential_lengh_gauge'
 
       INTEGER                                            :: handle, i, image
       REAL(kind=dp)                                      :: field(3)
-      TYPE(dft_control_type), POINTER                    :: dft_control
-      TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_h
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: matrix_s, moments
+      TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_h
+      TYPE(dft_control_type), POINTER                    :: dft_control
 
       NULLIFY (dft_control)
       CALL timeset(routineN, handle)
 
       CALL get_qs_env(qs_env, &
                       dft_control=dft_control, &
-                      matrix_h_kp=matrix_h,&
+                      matrix_h_kp=matrix_h, &
                       matrix_s=matrix_s)
 
       NULLIFY (moments)

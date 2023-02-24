@@ -1280,8 +1280,8 @@ CONTAINS
       TYPE(pw_type), POINTER                             :: vppl_rspace
       TYPE(pw_type), DIMENSION(:), POINTER               :: v_rspace_new, v_rspace_new_aux_fit, &
                                                             v_tau_rspace, v_tau_rspace_aux_fit
-      TYPE(pw_type), POINTER                             :: v_sic_rspace, &
-                                                            v_spin_ddapc_rest_r, v_sccs_rspace
+      TYPE(pw_type), POINTER                             :: v_sic_rspace, v_spin_ddapc_rest_r, &
+                                                            v_sccs_rspace
       TYPE(pw_type), DIMENSION(:), POINTER               :: v_rspace_embed
       TYPE(cdft_control_type), POINTER                   :: cdft_control
       LOGICAL, INTENT(in)                                :: calculate_forces

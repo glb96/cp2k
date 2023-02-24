@@ -208,8 +208,8 @@ CONTAINS
       TYPE(pw_type), DIMENSION(:), POINTER               :: rho_r, v_rspace_embed, v_rspace_new, &
                                                             v_rspace_new_aux_fit, v_tau_rspace, &
                                                             v_tau_rspace_aux_fit
-      TYPE(pw_type), POINTER :: rho0_s_rs, rho_core, rho_nlcc, v_hartree_rspace, &
-         v_sccs_rspace, v_sic_rspace, v_spin_ddapc_rest_r, vee, vppl_rspace
+      TYPE(pw_type), POINTER :: rho0_s_rs, rho_core, rho_nlcc, v_hartree_rspace, v_sccs_rspace, &
+         v_sic_rspace, v_spin_ddapc_rest_r, vee, vppl_rspace
       TYPE(qs_energy_type), POINTER                      :: energy
       TYPE(qs_ks_env_type), POINTER                      :: ks_env
       TYPE(qs_rho_type), POINTER                         :: rho, rho_struct, rho_xc
@@ -626,7 +626,7 @@ CONTAINS
          energy%exc = energy%exc - ekin_mol
 
       END IF
-      
+
       ! ***  Single atom contributions ***
       IF (.NOT. just_energy) THEN
          IF (calculate_forces) THEN
@@ -1119,11 +1119,11 @@ CONTAINS
       CHARACTER(LEN=*), PARAMETER :: routineN = 'evaluate_core_matrix_traces'
 
       INTEGER                                            :: handle
+      REAL(KIND=dp)                                      :: energy_core_im
       TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrixkp_h, matrixkp_t, rho_ao_kp
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(qs_energy_type), POINTER                      :: energy
       TYPE(qs_rho_type), POINTER                         :: rho
-      REAL(KIND=dp)                                      :: energy_core_im
 
       CALL timeset(routineN, handle)
       NULLIFY (energy, rho, dft_control, rho_ao_kp, matrixkp_t, matrixkp_h)
@@ -1138,16 +1138,16 @@ CONTAINS
       CALL qs_rho_get(rho, rho_ao_kp=rho_ao_kp)
 
       CALL calculate_ptrace(matrixkp_h, rho_ao_kp, energy%core, dft_control%nspins)
-      
+
       ! Add the imaginary part in the RTP case
-      IF (qs_env%run_rtp) THEN 
+      IF (qs_env%run_rtp) THEN
          IF (dft_control%rtp_control%velocity_gauge) THEN
             CALL get_qs_env(qs_env, matrix_h_im_kp=matrixkp_h)
             CALL qs_rho_get(rho, rho_ao_im_kp=rho_ao_kp)
             CALL calculate_ptrace(matrixkp_h, rho_ao_kp, energy_core_im, dft_control%nspins)
             energy%core = energy%core - energy_core_im
          END IF
-      END IF 
+      END IF
 
       ! kinetic energy
       IF (ASSOCIATED(matrixkp_t)) &

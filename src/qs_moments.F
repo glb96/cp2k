@@ -2249,8 +2249,8 @@ CONTAINS
                                                             order
       LOGICAL                                            :: my_com_nl, my_velreprs
       REAL(dp)                                           :: charge, dd, strace, trace
-      REAL(dp), ALLOCATABLE, DIMENSION(:)                :: mmom, nlcom_rv, nlcom_rxrv, nlcom_rrv, & 
-                                                            nlcom_rvr, nlcom_rrv_vrr, &
+      REAL(dp), ALLOCATABLE, DIMENSION(:)                :: mmom, nlcom_rrv, nlcom_rrv_vrr, &
+                                                            nlcom_rv, nlcom_rvr, nlcom_rxrv, &
                                                             qupole_der, rmom_vel
       REAL(dp), ALLOCATABLE, DIMENSION(:, :)             :: rmom
       REAL(dp), DIMENSION(3)                             :: rcc, ria
@@ -2577,7 +2577,7 @@ CONTAINS
       ELSE
          CALL print_moments(unit_number, nmom, rmom, rlab, rcc, cell, periodic=.FALSE.)
       END IF
-      
+
       IF (my_com_nl) THEN
          IF (magnetic) THEN
             mmom(:) = nlcom_rxrv(:)
@@ -2604,7 +2604,7 @@ CONTAINS
 
       IF (my_com_nl) THEN
          IF (nmom >= 1 .AND. my_velreprs) DEALLOCATE (nlcom_rv)
-         IF (nmom >= 2 .AND. my_velreprs) THEN 
+         IF (nmom >= 2 .AND. my_velreprs) THEN
             DEALLOCATE (nlcom_rrv)
             DEALLOCATE (nlcom_rvr)
             DEALLOCATE (nlcom_rrv_vrr)
@@ -2988,7 +2988,7 @@ CONTAINS
       IF (calc_rvr .OR. calc_rrv_vrr) THEN
          NULLIFY (rho_ao)
          CALL qs_rho_get(rho, rho_ao=rho_ao)
-         
+
          IF (calc_rvr) THEN
             trace = 0._dp
             DO ind = 1, SIZE(matrix_rvr)
@@ -2997,13 +2997,13 @@ CONTAINS
                   CALL dbcsr_set(tmp_ao, 0.0_dp)
                   CALL dbcsr_multiply("T", "N", 1.0_dp, rho_ao(ispin)%matrix, matrix_rvr(ind)%matrix, &
                                       0.0_dp, tmp_ao)
-                 CALL dbcsr_trace(tmp_ao, trace)
+                  CALL dbcsr_trace(tmp_ao, trace)
                   strace = strace + trace
                END DO
                nlcom_rvr(ind) = nlcom_rvr(ind) + strace
             END DO
          END IF
-         
+
          IF (calc_rrv_vrr) THEN
             trace = 0._dp
             DO ind = 1, SIZE(matrix_rrv_vrr)
@@ -3012,7 +3012,7 @@ CONTAINS
                   CALL dbcsr_set(tmp_ao, 0.0_dp)
                   CALL dbcsr_multiply("T", "N", 1.0_dp, rho_ao(ispin)%matrix, matrix_rrv_vrr(ind)%matrix, &
                                       0.0_dp, tmp_ao)
-                 CALL dbcsr_trace(tmp_ao, trace)
+                  CALL dbcsr_trace(tmp_ao, trace)
                   strace = strace + trace
                END DO
                nlcom_rrv_vrr(ind) = nlcom_rrv_vrr(ind) + strace

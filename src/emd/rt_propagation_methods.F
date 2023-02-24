@@ -147,7 +147,6 @@ CONTAINS
             CALL velocity_gauge_ks_matrix(qs_env, subtract_nl_term=.FALSE.)
          END IF
 
-
          CALL get_qs_env(qs_env, matrix_s=matrix_s)
          IF (.NOT. rtp_control%fixed_ions) THEN
             CALL s_matrices_create(matrix_s, rtp)
@@ -289,7 +288,7 @@ CONTAINS
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: delta_P
 
       CHARACTER(len=*), PARAMETER                        :: routineN = 'step_finalize'
-      
+
       INTEGER                                            :: handle, i, ihist
       TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_new, mos_old
       TYPE(dbcsr_p_type), DIMENSION(:), POINTER          :: exp_H_new, exp_H_old, matrix_ks, &
