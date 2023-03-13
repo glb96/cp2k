@@ -390,26 +390,28 @@ CONTAINS
 
    END SUBROUTINE get_restart_wfn
 
-
 ! **************************************************************************************************
-!> \brief Set mo_array(ispin)%uniform_occupation after a restart 
-!> \param qs_env ...
+!> \brief Set mo_array(ispin)%uniform_occupation after a restart
+!> \param mo_array ...
+!> \param nspin ...
 !> \author Guillaume Le Breton (03.23)
 ! **************************************************************************************************
 
    SUBROUTINE set_uniform_occupation_mo_array(mo_array, nspin)
-     
+
       TYPE(mo_set_type), DIMENSION(:), POINTER           :: mo_array
-      INTEGER                                            :: ispin, nspin, mo
+      INTEGER                                            :: nspin
+
+      INTEGER                                            :: ispin, mo
       LOGICAL                                            :: is_uniform
 
       DO ispin = 1, nspin
          is_uniform = .TRUE.
          DO mo = 1, mo_array(ispin)%nmo
             IF (mo_array(ispin)%occupation_numbers(mo) /= 0.0 .AND. &
-            mo_array(ispin)%occupation_numbers(mo) /= 1.0 .AND. & 
-            mo_array(ispin)%occupation_numbers(mo) /= 2.0)  &
-            is_uniform = .FALSE. 
+                mo_array(ispin)%occupation_numbers(mo) /= 1.0 .AND. &
+                mo_array(ispin)%occupation_numbers(mo) /= 2.0) &
+               is_uniform = .FALSE.
          END DO
          mo_array(ispin)%uniform_occupation = is_uniform
       END DO
