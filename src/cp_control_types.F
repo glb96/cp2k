@@ -951,7 +951,7 @@ CONTAINS
                END IF
                IF (ASSOCIATED(efield_fields(i)%efield%polarisation)) &
                   DEALLOCATE (efield_fields(i)%efield%polarisation)
-               IF (ASSOCIATED(efield_fields(i)%efield%vec_pot_initial))  &
+               IF (ASSOCIATED(efield_fields(i)%efield%vec_pot_initial)) &
                   DEALLOCATE (efield_fields(i)%efield%vec_pot_initial)
                DEALLOCATE (efield_fields(i)%efield)
             END IF

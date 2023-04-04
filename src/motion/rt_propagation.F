@@ -395,6 +395,7 @@ CONTAINS
 !> \brief overwrites some values in the input file such that the .restart
 !>        file will contain the appropriate information
 !> \param md_env ...
+!> \param qs_env ...
 !> \param force_env ...
 !> \author Florian Schiffmann (02.09)
 ! **************************************************************************************************
@@ -403,10 +404,11 @@ CONTAINS
       TYPE(md_environment_type), OPTIONAL, POINTER       :: md_env
       TYPE(qs_environment_type), OPTIONAL, POINTER       :: qs_env
       TYPE(force_env_type), POINTER                      :: force_env
-      TYPE(dft_control_type), POINTER                    :: dft_control
-      TYPE(section_vals_type), POINTER                   :: motion_section, root_section, &
-                                                            rt_section, efield_section
+
       REAL(KIND=dp), DIMENSION(:), POINTER               :: tmp_vals
+      TYPE(dft_control_type), POINTER                    :: dft_control
+      TYPE(section_vals_type), POINTER                   :: efield_section, motion_section, &
+                                                            root_section, rt_section
 
       CALL get_qs_env(qs_env=qs_env, dft_control=dft_control)
       root_section => force_env%root_section
@@ -423,11 +425,11 @@ CONTAINS
          NULLIFY (tmp_vals)
          ALLOCATE (tmp_vals(3))
          tmp_vals = dft_control%efield_fields(1)%efield%vec_pot_initial
-         CALL section_vals_val_set(efield_section, "VEC_POT_INITIAL", & 
-                                    r_vals_ptr=tmp_vals, &
-                                    i_rep_section=1)
+         CALL section_vals_val_set(efield_section, "VEC_POT_INITIAL", &
+                                   r_vals_ptr=tmp_vals, &
+                                   i_rep_section=1)
       END IF
-      
+
       CALL write_restart(md_env=md_env, root_section=root_section)
 
    END SUBROUTINE rt_write_input_restart

@@ -164,10 +164,10 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="VEC_POT_INITIAL", &
                           description="Initial value of the vector "// &
-                                        "potential (for velocity gauge). This input is "// &
-                                        "made especially for restarting RTP calculation. "// &
-                                        "Unit is atomic unit. "// &
-                                        "Note that if several field sections are defined, the first one will be used.", &
+                          "potential (for velocity gauge). This input is "// &
+                          "made especially for restarting RTP calculation. "// &
+                          "Unit is atomic unit. "// &
+                          "Note that if several field sections are defined, the first one will be used.", &
                           usage="Wavelength  0.0 0.0 0.0", &
                           repeats=.FALSE., &
                           n_var=3, type_of_var=real_t, &
