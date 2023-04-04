@@ -408,7 +408,6 @@ CONTAINS
                                                             rt_section, efield_section
       REAL(KIND=dp), DIMENSION(:), POINTER               :: tmp_vals
 
-
       CALL get_qs_env(qs_env=qs_env, dft_control=dft_control)
       root_section => force_env%root_section
       motion_section => section_vals_get_subs_vals(root_section, "MOTION")
@@ -421,15 +420,12 @@ CONTAINS
 
       IF (dft_control%apply_vector_potential) THEN
          efield_section => section_vals_get_subs_vals(root_section, "FORCE_EVAL%DFT%EFIELD")
-         ALLOCATE(tmp_vals(3))
+         NULLIFY (tmp_vals)
+         ALLOCATE (tmp_vals(3))
          tmp_vals = dft_control%efield_fields(1)%efield%vec_pot_initial
-         WRITE(*, *) 'restart section'
-         WRITE(*, *) tmp_vals
-         !CALL section_vals_val_set(efield_section, "VEC_POT_INITIAL", & 
-         !                           r_vals_ptr=tmp_vals, &
-         !                           i_rep_section=1)
-         WRITE(*, *) dft_control%efield_fields(1)%efield%vec_pot_initial
-         DEALLOCATE(tmp_vals)
+         CALL section_vals_val_set(efield_section, "VEC_POT_INITIAL", & 
+                                    r_vals_ptr=tmp_vals, &
+                                    i_rep_section=1)
       END IF
       
       CALL write_restart(md_env=md_env, root_section=root_section)
