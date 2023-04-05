@@ -2171,7 +2171,7 @@ CONTAINS
          CALL section_vals_val_get(efield_section, "VEC_POT_INITIAL", i_rep_section=i, &
                                    r_vals=tmp_vals)
 
-         ALLOCATE(efield%vec_pot_initial, source=TRANSFER(tmp_vals, efield%vec_pot_initial))
+         ALLOCATE (efield%vec_pot_initial, source=TRANSFER(tmp_vals, efield%vec_pot_initial))
 
          IF (efield%envelop_id == constant_env) THEN
             ALLOCATE (efield%envelop_i_vars(2))
