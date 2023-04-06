@@ -1,0 +1,127 @@
+!--------------------------------------------------------------------------------------------------!
+!   CP2K: A general program to perform molecular dynamics simulations                              !
+!   Copyright 2000-2023 CP2K developers group <https://cp2k.org>                                   !
+!                                                                                                  !
+!   SPDX-License-Identifier: GPL-2.0-or-later                                                      !
+!--------------------------------------------------------------------------------------------------!
+
+! **************************************************************************************************
+!> \brief Function related to MO projection in RTP calculations
+!> \author Guillaume Le Breton 04.2023
+! **************************************************************************************************
+MODULE rt_projection_mo_utils
+   USE cp_control_types,                ONLY: dft_control_type,&
+                                              rtp_control_type,&
+                                              proj_mo_type
+   USE input_section_types,             ONLY: &
+        section_get_ival, section_get_keyword, section_release, section_type, section_vals_get, &
+        section_vals_get_subs_vals, section_vals_type, section_vals_val_get, section_vals_val_set
+   USE qs_environment_types,            ONLY: get_qs_env,&
+                                              qs_environment_type
+   USE rt_propagation_types,            ONLY: rt_prop_type
+
+#include "./../base/base_uses.f90"
+
+   IMPLICIT NONE
+   PRIVATE
+
+   CHARACTER(len=*), PARAMETER, PRIVATE :: moduleN = 'input_cp2k_projection_rtp'
+
+   PUBLIC :: init_mo_projection, compute_and_write_proj_mo
+
+CONTAINS
+
+! **************************************************************************************************
+!> \brief Initialize the mo projection objects for time dependent run
+!> \param qs_env ...
+!> \param rtp_control ...
+!> \param  ... UNMATCHED_PROCEDURE_ARGUMENT: please check 
+!> \author Guillaume Le Breton
+! **************************************************************************************************
+   SUBROUTINE init_mo_projection(qs_env, rtp_control)
+      TYPE(qs_environment_type), POINTER                 :: qs_env
+      TYPE(rtp_control_type), POINTER                    :: rtp_control
+      
+      TYPE(section_vals_type), POINTER                   :: input, proj_mo_section
+      INTEGER                                            :: i, nrep
+      TYPE(proj_mo_type), POINTER                        :: proj_mo
+      INTEGER, DIMENSION(:), POINTER                     :: tmp_ints
+
+
+      NULLIFY (rtp_control%proj_mo_list, tmp_ints)
+
+      CALL get_qs_env(qs_env, input=input)
+
+      proj_mo_section => section_vals_get_subs_vals(input, "DFT%REAL_TIME_PROPAGATION%PROJECTION_MO")
+
+      ! Read the input section and load the reference MOs
+      CALL section_vals_get(proj_mo_section, n_repetition=nrep)
+
+      ALLOCATE (rtp_control%proj_mo_list(nrep))
+      DO i = 1, nrep
+        NULLIFY (rtp_control%proj_mo_list(i)%proj_mo)
+        ALLOCATE (rtp_control%proj_mo_list(i)%proj_mo)
+        proj_mo => rtp_control%proj_mo_list(i)%proj_mo
+        NULLIFY (proj_mo%mo_ref)
+        
+        CALL section_vals_val_get(proj_mo_section, "REF_MO_FILE_NAME", i_rep_section=i, &
+                                   c_val=proj_mo%ref_mo_file_name)
+         
+        WRITE(*, *) 'default value for REF_MO_FILE_NAME = ', proj_mo%ref_mo_file_name
+
+        CALL section_vals_val_get(proj_mo_section, "REF_MO_INDEX", i_rep_section=i, &
+                                   i_vals=tmp_ints)
+        ALLOCATE (proj_mo%ref_mo_index, SOURCE=tmp_ints(:))
+        CALL section_vals_val_get(proj_mo_section, "REF_MO_SPIN", i_rep_section=i, &
+                                   i_val=proj_mo%ref_mo_spin)
+        CALL section_vals_val_get(proj_mo_section, "SUM_ON_ALL_REF", i_rep_section=i, &
+                                   l_val=proj_mo%sum_on_all_ref)
+        CALL section_vals_val_get(proj_mo_section, "REF_TD_INDEX", i_rep_section=i, &
+                                   i_vals=tmp_ints)
+        ALLOCATE (proj_mo%td_mo_index, SOURCE=tmp_ints(:))
+        CALL section_vals_val_get(proj_mo_section, "REF_TD_SPIN", i_rep_section=i, &
+                                   i_val=proj_mo%td_mo_spin)
+      END DO 
+
+
+   END SUBROUTINE init_mo_projection
+
+! **************************************************************************************************
+!> \brief Read the MO from .wfn file
+!> \param  ... UNMATCHED_PROCEDURE_ARGUMENT: please check 
+!> \author Guillaume Le Breton
+! **************************************************************************************************
+   SUBROUTINE read_reference_mo_from_wfn()
+      WRITE(*, *) 'for compilation'
+   END SUBROUTINE read_reference_mo_from_wfn
+
+! **************************************************************************************************
+!> \brief Compute the projection of the current MO coefficients on reference ones
+!>        and write the results.
+!> \param  ... UNMATCHED_PROCEDURE_ARGUMENT: please check 
+!> \author Guillaume Le Breton
+! **************************************************************************************************
+   SUBROUTINE compute_and_write_proj_mo()
+      WRITE(*, *) 'for compilation'
+   END SUBROUTINE compute_and_write_proj_mo
+
+! **************************************************************************************************
+!> \brief Compute the projection of the current MO coefficients on reference ones
+!> \param  ... UNMATCHED_PROCEDURE_ARGUMENT: please check 
+!> \author Guillaume Le Breton
+! **************************************************************************************************
+   SUBROUTINE compute_proj_mo()
+      WRITE(*, *) 'for compilation'
+   END SUBROUTINE compute_proj_mo
+
+! **************************************************************************************************
+!> \brief Write the projection of the current MO coefficients on reference ones
+!> \param  ... UNMATCHED_PROCEDURE_ARGUMENT: please check 
+!> \author Guillaume Le Breton
+! **************************************************************************************************
+   SUBROUTINE write_proj_mo()
+      WRITE(*, *) 'for compilation'
+   END SUBROUTINE write_proj_mo
+
+END MODULE rt_projection_mo_utils
+
