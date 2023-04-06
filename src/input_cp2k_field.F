@@ -111,8 +111,8 @@ CONTAINS
       CPASSERT(.NOT. ASSOCIATED(section))
       CALL section_create(section, __LOCATION__, name="EFIELD", &
                           description="Parameters for finite, time  dependent electric fields. "// &
-                       "For time dependent  propagation in periodic systems, set "// &
-                       "DFT%REAL_TIME_PROPAGATION%VELOCITY_GAUGE to true. "// &
+                          "For time dependent  propagation in periodic systems, set "// &
+                          "DFT%REAL_TIME_PROPAGATION%VELOCITY_GAUGE to true. "// &
                           "For static fields use EXTERNAL_POTENTIAL.", &
                           n_keywords=6, n_subsections=1, repeats=.TRUE.)
 

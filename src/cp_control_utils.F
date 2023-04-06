@@ -2171,7 +2171,6 @@ CONTAINS
          CALL section_vals_val_get(efield_section, "VEC_POT_INITIAL", i_rep_section=i, &
                                    r_vals=tmp_vals)
          efield%vec_pot_initial = tmp_vals
-
          IF (efield%envelop_id == constant_env) THEN
             ALLOCATE (efield%envelop_i_vars(2))
             tmp_section => section_vals_get_subs_vals(efield_section, "CONSTANT_ENV", i_rep_section=i)
@@ -2234,6 +2233,8 @@ CONTAINS
       TYPE(section_vals_type), POINTER                   :: rtp_section
 
       INTEGER, DIMENSION(:), POINTER                     :: tmp
+      LOGICAL                                            :: is_present
+      TYPE(section_vals_type), POINTER                   :: tmp_section
 
       ALLOCATE (dft_control%rtp_control)
       CALL section_vals_val_get(rtp_section, "MAX_ITER", &
@@ -2277,6 +2278,13 @@ CONTAINS
       dft_control%rtp_control%delta_pulse_direction = tmp
       CALL section_vals_val_get(rtp_section, "SC_CHECK_START", &
                                 i_val=dft_control%rtp_control%sc_check_start)
+      tmp_section => section_vals_get_subs_vals(rtp_section, "PROJECTION_MO")
+      CALL section_vals_get(tmp_section, explicit=is_present)
+      IF (is_present) THEN
+         dft_control%rtp_control%proj_mo = .TRUE.
+      ELSE
+         dft_control%rtp_control%proj_mo = .FALSE.
+      END IF
 
    END SUBROUTINE read_rtp_section
 

@@ -74,6 +74,7 @@ MODULE rt_propagation
                                               qs_rho_type
    USE rt_delta_pulse,                  ONLY: apply_delta_pulse
    USE rt_hfx_utils,                    ONLY: rtp_hfx_rebuild
+   USE rt_projection_mo_utils,          ONLY: init_mo_projection
    USE rt_propagation_methods,          ONLY: propagation_step
    USE rt_propagation_output,           ONLY: rt_prop_output
    USE rt_propagation_types,            ONLY: get_rtp,&
@@ -187,6 +188,9 @@ CONTAINS
          rtp_control%initial_step = .FALSE.
          rtp%energy_old = energy%total
       END IF
+
+      ! Setup the MO projection environment if required
+      IF (rtp_control%proj_mo) CALL init_mo_projection(qs_env, rtp_control)
 
    END SUBROUTINE rt_prop_setup
 

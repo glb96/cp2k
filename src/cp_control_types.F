@@ -68,6 +68,9 @@ MODULE cp_control_types
       LOGICAL                              :: velocity_gauge
       REAL(KIND=dp), DIMENSION(3)          :: vec_pot
       LOGICAL                              :: nl_gauge_transform
+      LOGICAL                              :: proj_mo
+      TYPE(proj_mo_p_type), POINTER, &
+         DIMENSION(:)                      :: proj_mo_list => NULL()
    END TYPE rtp_control_type
 ! **************************************************************************************************
 ! \brief Control parameters for DFTB calculations
@@ -189,6 +192,22 @@ MODULE cp_control_types
       REAL(KIND=dp)                        :: alpha0_hard
       REAL(KIND=dp)                        :: max_rad_local
    END TYPE gapw_control_type
+! **************************************************************************************************
+! \brief parameters for EMD/RTP calculations involving MO projections
+! **************************************************************************************************
+   TYPE proj_mo_type
+      INTEGER, DIMENSION(:), ALLOCATABLE         :: ref_mo_index
+      INTEGER                                    :: ref_mo_spin
+      LOGICAL                                    :: sum_on_all_ref
+      INTEGER, DIMENSION(:), ALLOCATABLE         :: td_mo_index
+      INTEGER                                    :: td_mo_spin
+      CHARACTER(LEN=default_path_length)         :: ref_mo_file_name
+      TYPE(cp_fm_type), POINTER, DIMENSION(:)   :: mo_ref => NULL()
+   END TYPE proj_mo_type
+
+   TYPE proj_mo_p_type
+      TYPE(proj_mo_type), POINTER           :: proj_mo => NULL()
+   END TYPE proj_mo_p_type
 ! **************************************************************************************************
 ! \brief parameters for calculations involving a time dependent electric field
 ! **************************************************************************************************
@@ -598,6 +617,7 @@ MODULE cp_control_types
              gapw_control_type, &
              tddfpt_control_type, &
              tddfpt2_control_type, &
+             proj_mo_type, &
              efield_type, &
              mulliken_restraint_type, &
              ddapc_restraint_type, &
