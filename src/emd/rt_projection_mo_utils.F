@@ -109,7 +109,7 @@ CONTAINS
           ! Read XAS TDP mos
         END IF
         
-        WRITE(*, *) 'default value for REF_MO_FILE_NAME = ', proj_mo%ref_mo_file_name
+        WRITE(*, *) 'default value for REF_MO_FILE_NAME = ', TRIM(proj_mo%ref_mo_file_name), ' ok?' 
          
         
 
