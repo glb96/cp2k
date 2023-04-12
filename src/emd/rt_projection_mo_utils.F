@@ -13,6 +13,8 @@ MODULE rt_projection_mo_utils
    USE cp_control_types,                ONLY: dft_control_type,&
                                               rtp_control_type,&
                                               proj_mo_type
+   USE input_constants,                 ONLY: proj_mo_ref_scf,&
+                                              proj_mo_ref_xas_tdp
    USE input_section_types,             ONLY: &
         section_get_ival, section_get_keyword, section_release, section_type, section_vals_get, &
         section_vals_get_subs_vals, section_vals_type, section_vals_val_get, section_vals_val_set
@@ -43,7 +45,7 @@ CONTAINS
       TYPE(rtp_control_type), POINTER                    :: rtp_control
       
       TYPE(section_vals_type), POINTER                   :: input, proj_mo_section
-      INTEGER                                            :: i, nrep
+      INTEGER                                            :: i, nrep, reftype
       TYPE(proj_mo_type), POINTER                        :: proj_mo
       INTEGER, DIMENSION(:), POINTER                     :: tmp_ints
 
@@ -51,8 +53,8 @@ CONTAINS
       NULLIFY (rtp_control%proj_mo_list, tmp_ints)
 
       CALL get_qs_env(qs_env, input=input)
-
-      proj_mo_section => section_vals_get_subs_vals(input, "DFT%REAL_TIME_PROPAGATION%PROJECTION_MO")
+      
+      proj_mo_section => section_vals_get_subs_vals(input, "DFT%REAL_TIME_PROPAGATION%PRINT%PROJECTION_MO")
 
       ! Read the input section and load the reference MOs
       CALL section_vals_get(proj_mo_section, n_repetition=nrep)
@@ -69,6 +71,12 @@ CONTAINS
          
         WRITE(*, *) 'default value for REF_MO_FILE_NAME = ', proj_mo%ref_mo_file_name
 
+        CALL section_vals_val_get(proj_mo_section, "REFERENCE_TYPE", i_rep_section=i, &
+                                   i_val=reftype)
+
+        WRITE(*, *) 'ref type = ', reftype
+        
+
         CALL section_vals_val_get(proj_mo_section, "REF_MO_INDEX", i_rep_section=i, &
                                    i_vals=tmp_ints)
         ALLOCATE (proj_mo%ref_mo_index, SOURCE=tmp_ints(:))
@@ -76,10 +84,10 @@ CONTAINS
                                    i_val=proj_mo%ref_mo_spin)
         CALL section_vals_val_get(proj_mo_section, "SUM_ON_ALL_REF", i_rep_section=i, &
                                    l_val=proj_mo%sum_on_all_ref)
-        CALL section_vals_val_get(proj_mo_section, "REF_TD_INDEX", i_rep_section=i, &
+        CALL section_vals_val_get(proj_mo_section, "TD_MO_INDEX", i_rep_section=i, &
                                    i_vals=tmp_ints)
         ALLOCATE (proj_mo%td_mo_index, SOURCE=tmp_ints(:))
-        CALL section_vals_val_get(proj_mo_section, "REF_TD_SPIN", i_rep_section=i, &
+        CALL section_vals_val_get(proj_mo_section, "TD_MO_SPIN", i_rep_section=i, &
                                    i_val=proj_mo%td_mo_spin)
       END DO 
 

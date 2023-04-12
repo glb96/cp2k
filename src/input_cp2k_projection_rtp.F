@@ -52,20 +52,15 @@ CONTAINS
                           "coefficients on reference ones. You can define "// &
                           "several sections like this to project the TD-MOs "// &
                           "on different reference MOs.", &
+                          n_keywords=7, n_subsections=1, &
                           repeats=.TRUE.)
 
       NULLIFY (keyword, subsection)
-
       CALL keyword_create(keyword, __LOCATION__, name="REFERENCE_TYPE", &
-                          description="Type of the reference MO. ", &
+                          description="Type of the reference MO file provided in REF_MO_FILE_NAME.", &
                           enum_c_vals=s2a("SCF", "XAS_TDP"), &
                           usage="REFERENCE_TYPE SCF", &
                           default_i_val=proj_mo_ref_scf, &
-                          !enum_desc=s2a("The reference MO is from an SCF calculation provided by a .wfn file defined in REF_MO_FILE_NAME. "// &
-                          !"Defining MO_REF_INDEX is recommanded to define the reference MO "// &
-                          !"among the  available one. ", &
-                          !"The reference MO is from an XAS_TDP analysis. Only one MO is "// &
-                          !"available and thus will be used as reference."), &
                           enum_desc=s2a("The reference MO is from an SCF calculation.", &
                                         "The reference MO is from an XAS_TDP analysis."), &
                           enum_i_vals=(/proj_mo_ref_scf, proj_mo_ref_xas_tdp/))
@@ -77,12 +72,13 @@ CONTAINS
                           "For instance a restart wfn file from SCF calculation or an excited state from XAS_TDP calculation. "// &
                           "If no file is specified, the default is to use DFT%WFN_RESTART_FILE_NAME.", &
                           usage="REF_MO_FILE_NAME <FILENAME>", &
-                          type_of_var=lchar_t)
+                          default_lc_val="")
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
-      CALL keyword_create(keyword, __LOCATION__, name="MO_REF_INDEX", &
+      CALL keyword_create(keyword, __LOCATION__, name="REF_MO_INDEX", &
                           description="Indexes of the reference MO read from the .wfn reference file (see REF_MO_FILE_NAME). "// &
+                          "Use this keywork if REFERENCE_TYPE=SCF."// &
                           "This keyword can be repeated several times "// &
                           "(useful if you have to specify many indexes)."// &
                           "One file will be generated per index defined.", &
@@ -92,10 +88,10 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
-      CALL keyword_create(keyword, __LOCATION__, name="MO_TD_SPIN", &
+      CALL keyword_create(keyword, __LOCATION__, name="REF_MO_SPIN", &
                           description="Spin of the reference MOs to consider. 1 for ALPHA spin, 2 for BETA spin. "// &
                           "If the reference MO is spin independent this key is not used.", &
-                          usage="MO_TD_SPIN 1 2", &
+                          usage="MO_TD_SPIN 1", &
                           default_i_val=1, &
                           n_var=1, type_of_var=integer_t)
       CALL section_add_keyword(section, keyword)
@@ -110,7 +106,7 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
-      CALL keyword_create(keyword, __LOCATION__, name="MO_TD_INDEX", &
+      CALL keyword_create(keyword, __LOCATION__, name="TD_MO_INDEX", &
                           description="Indexes of the time dependent MOs to project on the reference MOs. "// &
                           "This keyword can be repeated several times "// &
                           "(useful if you have to specify many indexes). "// &
@@ -122,7 +118,7 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
-      CALL keyword_create(keyword, __LOCATION__, name="MO_TD_SPIN", &
+      CALL keyword_create(keyword, __LOCATION__, name="TD_MO_SPIN", &
                           description="Spin of the TD MOs to consider. 1 for ALPHA spin, 2 for BETA spin. "// &
                           "If the TD calculation is spin independent this key is not used.", &
                           usage="MO_TD_SPIN 1 2", &

@@ -2278,7 +2278,7 @@ CONTAINS
       dft_control%rtp_control%delta_pulse_direction = tmp
       CALL section_vals_val_get(rtp_section, "SC_CHECK_START", &
                                 i_val=dft_control%rtp_control%sc_check_start)
-      tmp_section => section_vals_get_subs_vals(rtp_section, "PROJECTION_MO")
+      tmp_section => section_vals_get_subs_vals(rtp_section, "PRINT%PROJECTION_MO")
       CALL section_vals_get(tmp_section, explicit=is_present)
       IF (is_present) THEN
          dft_control%rtp_control%proj_mo = .TRUE.
