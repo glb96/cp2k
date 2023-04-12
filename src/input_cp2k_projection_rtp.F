@@ -72,7 +72,7 @@ CONTAINS
                           "For instance a restart wfn file from SCF calculation or an excited state from XAS_TDP calculation. "// &
                           "If no file is specified, the default is to use DFT%WFN_RESTART_FILE_NAME.", &
                           usage="REF_MO_FILE_NAME <FILENAME>", &
-                          default_lc_val="")
+                          default_lc_val="DEFAULT")
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 

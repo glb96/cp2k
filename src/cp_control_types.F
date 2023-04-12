@@ -201,8 +201,8 @@ MODULE cp_control_types
       LOGICAL                                    :: sum_on_all_ref
       INTEGER, DIMENSION(:), ALLOCATABLE         :: td_mo_index
       INTEGER                                    :: td_mo_spin
-      CHARACTER(LEN=default_path_length)         :: ref_mo_file_name
-      TYPE(cp_fm_type), POINTER, DIMENSION(:)   :: mo_ref => NULL()
+      CHARACTER(LEN==default_path_length)        :: ref_mo_file_name
+      TYPE(cp_fm_type), POINTER, DIMENSION(:)    :: mo_ref => NULL()
    END TYPE proj_mo_type
 
    TYPE proj_mo_p_type
