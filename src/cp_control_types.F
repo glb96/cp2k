@@ -202,7 +202,6 @@ MODULE cp_control_types
       INTEGER, DIMENSION(:), ALLOCATABLE         :: td_mo_index
       INTEGER                                    :: td_mo_spin
       CHARACTER(LEN=default_path_length)         :: ref_mo_file_name
-      !TYPE(cp_fm_type), POINTER, DIMENSION(:)    :: mo_ref => NULL()
       TYPE(cp_fm_type)                           :: mo_ref
    END TYPE proj_mo_type
 

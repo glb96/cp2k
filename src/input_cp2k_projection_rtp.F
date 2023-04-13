@@ -92,6 +92,9 @@ CONTAINS
                           "If the reference MO is spin independent this key is not used.", &
                           usage="MO_TD_SPIN 1", &
                           default_i_val=1, &
+                          enum_i_vals=(/1, 2/), &
+                          enum_desc=s2a("ALPHA spin is used", &
+                           
                           n_var=1, type_of_var=integer_t)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)

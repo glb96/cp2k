@@ -25,6 +25,7 @@ MODULE rt_projection_mo_utils
                                               cp_logger_get_default_unit_nr,&
                                               cp_logger_type
    USE cp_output_handling,              ONLY: cp_print_key_generate_filename
+   USE dbcsr_api,                       ONLY: dbcsr_p_type
    USE input_constants,                 ONLY: proj_mo_ref_scf,&
                                               proj_mo_ref_xas_tdp
    USE input_section_types,             ONLY: &
@@ -70,11 +71,13 @@ CONTAINS
       INTEGER                                            :: i, nrep, n_rep_val, reftype
       TYPE(proj_mo_type), POINTER                        :: proj_mo
       INTEGER, DIMENSION(:), POINTER                     :: tmp_ints
+      TYPE(mo_set_type), DIMENSION(:), OPTIONAL, POINTER :: mos
+
 
       NULLIFY (rtp_control%proj_mo_list, tmp_ints, proj_mo, logger, &
-               input, proj_mo_section, print_key)
+               input, proj_mo_section, print_key, mos)
 
-      CALL get_qs_env(qs_env, input=input)
+      CALL get_qs_env(qs_env, input=input, mos=mos)
       
       proj_mo_section => section_vals_get_subs_vals(input, "DFT%REAL_TIME_PROPAGATION%PRINT%PROJECTION_MO")
 
@@ -113,7 +116,7 @@ CONTAINS
           ALLOCATE (proj_mo%ref_mo_index, SOURCE=tmp_ints(:))
           CALL section_vals_val_get(proj_mo_section, "REF_MO_SPIN", i_rep_section=i, &
                                       i_val=proj_mo%ref_mo_spin)
-
+          
           ! Read the SCF mos and store the one required
           CALL read_reference_mo_from_wfn(qs_env, proj_mo) 
 
@@ -138,6 +141,11 @@ CONTAINS
         ALLOCATE (proj_mo%td_mo_index, SOURCE=tmp_ints(:))
         CALL section_vals_val_get(proj_mo_section, "TD_MO_SPIN", i_rep_section=i, &
                                    i_val=proj_mo%td_mo_spin)
+        IF (proj_mo%td_mo_spin > SIZE(mos)) &
+           CALL cp_abort(__LOCATION__, &
+               "You asked to project the time dependent BETA spin  while the "// &
+               "real time DFT run has only one spin defined. "// &
+               "Please set TD_MO_SPIN to 1 or use UKS.")
       END DO 
 
 
@@ -250,22 +258,68 @@ CONTAINS
 !> \param  ... UNMATCHED_PROCEDURE_ARGUMENT: please check 
 !> \author Guillaume Le Breton
 ! **************************************************************************************************
-   SUBROUTINE compute_and_write_proj_mo()
-      WRITE(*, *) 'for compilation'
+   SUBROUTINE compute_and_write_proj_mo(qs_env, mos_new, proj_mo)
+      TYPE(qs_environment_type), POINTER                 :: qs_env
+      TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_new
+      TYPE(proj_mo_type), POINTER                        :: proj_mo
+      
+      INTEGER                                            :: nbr_ref_mo
+      TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_s
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: popu, phase
+
+      NULLIFY(matrix_s)
+
+      nbr_ref_mo = SIZE(proj_mo%ref_mo_index)
+      ALLOCATE(popu(SIZE(nbr_ref_mo))
+      ALLOCATE(phase(SIZE(nbr_ref_mo))
+
+      CALL get_qs_env(qs_env, matrix_s_kp=matrix_s)
+     
+
+      CALL compute_proj_mo(popu, phase, mo_td, proj_mo, matrix_s)
+
+      
+      DEALLOCATE(popu)
+      DEALLOCATE(phase)
+      
+
    END SUBROUTINE compute_and_write_proj_mo
 
 ! **************************************************************************************************
 !> \brief Compute the projection of the current MO coefficients on reference ones
-!> \param  ... UNMATCHED_PROCEDURE_ARGUMENT: please check 
+!> \param  ... 
 !> \author Guillaume Le Breton
 ! **************************************************************************************************
-   SUBROUTINE compute_proj_mo()
+   SUBROUTINE compute_proj_mo(popu, phase, mos_new, proj_mo, matrix_s)
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: popu, phase
+      TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_new
+      TYPE(proj_mo_type), POINTER                        :: proj_mo
+      TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_s
+
+      INTEGER                                            :: i, nbr_ref_mo
+      REAL(KIND=dp)                                      :: real_proj, imag_proj
+
+      nbr_ref_mo = SIZE(proj_mo%ref_mo_index)
+      spin_td = proj_mo%td_mo_spin
+
+      DO i = 1, nbr_ref_mo
+         ! Real part of the projection:
+         real_proj = 0.0_dp
+         mos_new(2*spin_td-1)
+         ! Imaginary part of the projection
+         imag_proj = 0.0_dp
+         
+         mos_new(2*spin_td) 
+
+      END DO
+
+
       WRITE(*, *) 'for compilation'
    END SUBROUTINE compute_proj_mo
 
 ! **************************************************************************************************
 !> \brief Write the projection of the current MO coefficients on reference ones
-!> \param  ... UNMATCHED_PROCEDURE_ARGUMENT: please check 
+!> \param  ... 
 !> \author Guillaume Le Breton
 ! **************************************************************************************************
    SUBROUTINE write_proj_mo()
