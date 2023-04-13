@@ -13,6 +13,13 @@ MODULE rt_projection_mo_utils
    USE cp_control_types,                ONLY: dft_control_type,&
                                               rtp_control_type,&
                                               proj_mo_type
+   USE cp_files,                        ONLY: close_file,&
+                                              open_file                                           
+   USE cp_fm_types,                     ONLY: cp_fm_create,&
+                                              cp_fm_to_fm
+   USE cp_fm_struct,                    ONLY: cp_fm_struct_create,&
+                                              cp_fm_struct_type,&
+                                              cp_fm_struct_release
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_io_unit,&
                                               cp_logger_get_default_unit_nr,&
@@ -25,7 +32,17 @@ MODULE rt_projection_mo_utils
         section_vals_get_subs_vals, section_vals_type, section_vals_val_get, section_vals_val_set
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
+   USE qs_kind_types,                   ONLY: get_qs_kind,&
+                                              get_qs_kind_set,&
+                                              qs_kind_type
+   USE qs_mo_types,                     ONLY: deallocate_mo_set,&
+                                              duplicate_mo_set,&
+                                              get_mo_set,&
+                                              mo_set_type
    USE rt_propagation_types,            ONLY: rt_prop_type
+   USE particle_types,                  ONLY: particle_type
+   USE message_passing,                 ONLY: mp_para_env_type                                           
+   USE qs_mo_io,                        ONLY: read_mos_restart_low
 
 #include "./../base/base_uses.f90"
 
@@ -49,12 +66,22 @@ CONTAINS
       TYPE(rtp_control_type), POINTER                    :: rtp_control
       
       TYPE(section_vals_type), POINTER                   :: input, proj_mo_section, print_key
-      TYPE(cp_logger_type), POINTER                      :: logger
-      INTEGER                                            :: i, nrep, n_rep_val, reftype
+      TYPE(cp_logger_type), POINTER                      :: logger 
+      INTEGER                                            :: i, nrep, n_rep_val, reftype, &
+                                                            restart_unit, natom, ispin, nspins, &
+                                                            nbr_ref_mo, real_mo_index, mo_index
       TYPE(proj_mo_type), POINTER                        :: proj_mo
       INTEGER, DIMENSION(:), POINTER                     :: tmp_ints
+      TYPE(mo_set_type), DIMENSION(:), POINTER           :: mo_qs, mo_ref
+      TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
+      TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      TYPE(mp_para_env_type), POINTER                    :: para_env
+      TYPE(dft_control_type), POINTER                    :: dft_control
+      TYPE(cp_fm_struct_type), POINTER                   :: mo_ref_fmstruct
 
-      NULLIFY (rtp_control%proj_mo_list, tmp_ints)
+      NULLIFY (rtp_control%proj_mo_list, tmp_ints, proj_mo, mo_qs, &
+      mo_ref, qs_kind_set, particle_set, para_env, dft_control, &
+      mo_ref_fmstruct, logger, input, proj_mo_section, print_key)
 
       CALL get_qs_env(qs_env, input=input)
       
@@ -68,7 +95,6 @@ CONTAINS
         NULLIFY (rtp_control%proj_mo_list(i)%proj_mo)
         ALLOCATE (rtp_control%proj_mo_list(i)%proj_mo)
         proj_mo => rtp_control%proj_mo_list(i)%proj_mo
-        NULLIFY (proj_mo%mo_ref)
         
         CALL section_vals_val_get(proj_mo_section, "REFERENCE_TYPE", i_rep_section=i, &
                                    i_val=reftype)
@@ -90,15 +116,68 @@ CONTAINS
                                                       extension=".wfn", my_local=.FALSE.)
              END IF
           END IF
-          ! Read SCF mos
-        
+          ! Read all the SCF mos
+          CALL get_qs_env(qs_env, &
+                      qs_kind_set=qs_kind_set, &
+                      particle_set=particle_set, &
+                      dft_control=dft_control, &
+                      mos=mo_qs, &
+                      para_env=para_env)
+          natom = SIZE(particle_set, 1)
+          nspins = SIZE(mo_qs)
 
+          ALLOCATE (mo_ref(nspins))
+          DO ispin = 1, nspins
+             CALL duplicate_mo_set(mo_ref(ispin), mo_qs(ispin))
+          END DO
+ 
+          IF (para_env%is_source()) &
+             CALL open_file(file_name=proj_mo%ref_mo_file_name, &
+                         file_action="READ", &
+                         file_form="UNFORMATTED", &
+                         file_status="OLD", &
+                         unit_number=restart_unit)
+ 
+          CALL read_mos_restart_low(mo_ref, para_env=para_env, qs_kind_set=qs_kind_set, &
+                                 particle_set=particle_set, natom=natom, &
+                                 rst_unit=restart_unit, multiplicity=dft_control%multiplicity)
+ 
+          IF (para_env%is_source()) CALL close_file(unit_number=restart_unit)
+          
+          ! Store only the mos required
           CALL section_vals_val_get(proj_mo_section, "REF_MO_INDEX", i_rep_section=i, &
                                       i_vals=tmp_ints)
           ALLOCATE (proj_mo%ref_mo_index, SOURCE=tmp_ints(:))
           CALL section_vals_val_get(proj_mo_section, "REF_MO_SPIN", i_rep_section=i, &
                                       i_val=proj_mo%ref_mo_spin)
-
+            
+          nbr_ref_mo = SIZE(proj_mo%ref_mo_index)
+          WRITE(*, *) 'Number of ref mo:', nbr_ref_mo
+            
+          
+          ! initialize the ref_mo which is saved
+          CALL cp_fm_struct_create(mo_ref_fmstruct, &
+             context=mo_ref(proj_mo%ref_mo_spin)%mo_coeff%matrix_struct%context, &
+             nrow_global=mo_ref(proj_mo%ref_mo_spin)%mo_coeff%matrix_struct%nrow_global, & 
+             ncol_global=nbr_ref_mo)
+          CALL cp_fm_create(proj_mo%mo_ref, mo_ref_fmstruct, 'mo_ref')
+          ! fill with the reference mo values (column per column)
+          DO mo_index = 1, nbr_ref_mo
+            real_mo_index = proj_mo%ref_mo_index(mo_index)
+            CALL cp_fm_to_fm(mo_ref(proj_mo%ref_mo_spin)%mo_coeff, proj_mo%mo_ref, & 
+                                    ncol=1, & 
+                                    source_start=real_mo_index, &
+                                    target_start= mo_index)
+            !proj_mo%mo_ref%local_data(:,mo_index) = mo_ref(ispin)%mo_coeff%local_data(:,real_mo_index)
+          END DO 
+          
+          ! Clean temporary variables 
+          DO ispin = 1, nspins
+            WRITE(*, *) 'mo_ref(ispin)%mo_coeff%matrix_struct', mo_ref(ispin)%mo_coeff%matrix_struct%nrow_global
+            WRITE(*, *) 'mo_ref(ispin)%mo_coeff%matrix_struct', mo_ref(ispin)%mo_coeff%matrix_struct%ncol_global
+            CALL deallocate_mo_set(mo_ref(ispin))
+          END DO
+          CALL cp_fm_struct_release(mo_ref_fmstruct)
         ELSE IF (reftype == proj_mo_ref_xas_tdp) THEN
           IF (proj_mo%ref_mo_file_name == "DEFAULT") THEN 
              CALL cp_abort(__LOCATION__, &
@@ -109,10 +188,10 @@ CONTAINS
           ! Read XAS TDP mos
         END IF
         
-        WRITE(*, *) 'default value for REF_MO_FILE_NAME = ', TRIM(proj_mo%ref_mo_file_name), ' ok?' 
+        WRITE(*, *) 'default value for REF_MO_FILE_NAME = ', TRIM(proj_mo%ref_mo_file_name)
          
         
-
+        ! Initialize the other parameters related to the TD mos.
         CALL section_vals_val_get(proj_mo_section, "SUM_ON_ALL_REF", i_rep_section=i, &
                                    l_val=proj_mo%sum_on_all_ref)
         CALL section_vals_val_get(proj_mo_section, "TD_MO_INDEX", i_rep_section=i, &
@@ -131,6 +210,72 @@ CONTAINS
 !> \author Guillaume Le Breton
 ! **************************************************************************************************
    SUBROUTINE read_reference_mo_from_wfn()
+         
+         CALL get_qs_env(qs_env, &
+                      qs_kind_set=qs_kind_set, &
+                      particle_set=particle_set, &
+                      dft_control=dft_control, &
+                      mos=mo_qs, &
+                      para_env=para_env)
+          natom = SIZE(particle_set, 1)
+          nspins = SIZE(mo_qs)
+
+          ALLOCATE (mo_ref(nspins))
+          DO ispin = 1, nspins
+             CALL duplicate_mo_set(mo_ref(ispin), mo_qs(ispin))
+          END DO
+
+          IF (para_env%is_source()) &
+             CALL open_file(file_name=proj_mo%ref_mo_file_name, &
+                         file_action="READ", &
+                         file_form="UNFORMATTED", &
+                         file_status="OLD", &
+                         unit_number=restart_unit)
+
+
+
+                CALL read_mos_restart_low(mo_ref, para_env=para_env, qs_kind_set=qs_kind_set, &
+                                 particle_set=particle_set, natom=natom, &
+                                 rst_unit=restart_unit, multiplicity=dft_control%multiplicity)
+
+          IF (para_env%is_source()) CALL close_file(unit_number=restart_unit)
+
+          ! Store only the mos required
+          CALL section_vals_val_get(proj_mo_section, "REF_MO_INDEX", i_rep_section=i, &
+                                      i_vals=tmp_ints)
+          ALLOCATE (proj_mo%ref_mo_index, SOURCE=tmp_ints(:))
+          CALL section_vals_val_get(proj_mo_section, "REF_MO_SPIN", i_rep_section=i, &
+                                      i_val=proj_mo%ref_mo_spin)
+
+          nbr_ref_mo = SIZE(proj_mo%ref_mo_index)
+          WRITE(*, *) 'Number of ref mo:', nbr_ref_mo
+
+
+          ! initialize the ref_mo which is saved
+          CALL cp_fm_struct_create(mo_ref_fmstruct, &
+             context=mo_ref(proj_mo%ref_mo_spin)%mo_coeff%matrix_struct%context, &
+             nrow_global=mo_ref(proj_mo%ref_mo_spin)%mo_coeff%matrix_struct%nrow_global, &
+             ncol_global=nbr_ref_mo)
+          CALL cp_fm_create(proj_mo%mo_ref, mo_ref_fmstruct, 'mo_ref')
+          ! fill with the reference mo values (column per column)
+          DO mo_index = 1, nbr_ref_mo
+            real_mo_index = proj_mo%ref_mo_index(mo_index)
+            CALL cp_fm_to_fm(mo_ref(proj_mo%ref_mo_spin)%mo_coeff, proj_mo%mo_ref, &
+                                    ncol=1, &
+                                    source_start=real_mo_index, &
+                                    target_start= mo_index)
+            !proj_mo%mo_ref%local_data(:,mo_index) = mo_ref(ispin)%mo_coeff%local_data(:,real_mo_index)
+          END DO
+
+          ! Clean temporary variables 
+          DO ispin = 1, nspins
+            WRITE(*, *) 'mo_ref(ispin)%mo_coeff%matrix_struct', mo_ref(ispin)%mo_coeff%matrix_struct%nrow_global
+            WRITE(*, *) 'mo_ref(ispin)%mo_coeff%matrix_struct', mo_ref(ispin)%mo_coeff%matrix_struct%ncol_global
+            CALL deallocate_mo_set(mo_ref(ispin))
+          END DO
+          CALL cp_fm_struct_release(mo_ref_fmstruct)
+
+
       WRITE(*, *) 'for compilation'
    END SUBROUTINE read_reference_mo_from_wfn
 
