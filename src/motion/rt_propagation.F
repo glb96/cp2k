@@ -190,7 +190,7 @@ CONTAINS
       END IF
 
       ! Setup the MO projection environment if required
-      IF (rtp_control%proj_mo) CALL init_mo_projection(qs_env, rtp_control)
+      IF (rtp_control%is_proj_mo) CALL init_mo_projection(qs_env, rtp_control)
 
    END SUBROUTINE rt_prop_setup
 

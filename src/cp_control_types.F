@@ -68,7 +68,7 @@ MODULE cp_control_types
       LOGICAL                              :: velocity_gauge
       REAL(KIND=dp), DIMENSION(3)          :: vec_pot
       LOGICAL                              :: nl_gauge_transform
-      LOGICAL                              :: proj_mo
+      LOGICAL                              :: is_proj_mo
       TYPE(proj_mo_p_type), POINTER, &
          DIMENSION(:)                      :: proj_mo_list => NULL()
    END TYPE rtp_control_type
@@ -796,6 +796,7 @@ CONTAINS
          DEALLOCATE (dft_control%period_efield)
       END IF
       IF (ASSOCIATED(dft_control%rtp_control)) THEN
+         CALL proj_mo_list_release(dft_control%rtp_control%proj_mo_list)
          DEALLOCATE (dft_control%rtp_control)
       END IF
 
@@ -951,6 +952,30 @@ CONTAINS
 
       CALL timestop(handle)
    END SUBROUTINE tddfpt2_control_release
+
+
+! **************************************************************************************************
+!> \brief ...
+!> \param efield_fields ...
+! **************************************************************************************************
+   SUBROUTINE proj_mo_list_release(proj_mo_list)
+      TYPE(proj_mo_p_type), DIMENSION(:), POINTER        :: proj_mo_list
+
+      INTEGER                                            :: i
+
+      IF (ASSOCIATED(proj_mo_list)) THEN
+         DO i = 1, SIZE(proj_mo_list)
+            IF (ASSOCIATED(proj_mo_list(i)%proj_mo)) THEN
+               IF (ALLOCATED(proj_mo_list(i)%proj_mo%ref_mo_index)) &
+                  DEALLOCATE (proj_mo_list(i)%proj_mo%ref_mo_index)
+               IF (ALLOCATED(proj_mo_list(i)%proj_mo%td_mo_index)) &
+                  DEALLOCATE (proj_mo_list(i)%proj_mo%td_mo_index)
+               CALL cp_fm_release(proj_mo_list(i)%proj_mo%mo_ref)
+            END IF
+         END DO
+         DEALLOCATE (proj_mo_list)
+      END IF
+   END SUBROUTINE proj_mo_list_release
 
 ! **************************************************************************************************
 !> \brief ...

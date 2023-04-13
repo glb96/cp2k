@@ -2281,9 +2281,9 @@ CONTAINS
       tmp_section => section_vals_get_subs_vals(rtp_section, "PRINT%PROJECTION_MO")
       CALL section_vals_get(tmp_section, explicit=is_present)
       IF (is_present) THEN
-         dft_control%rtp_control%proj_mo = .TRUE.
+         dft_control%rtp_control%is_proj_mo = .TRUE.
       ELSE
-         dft_control%rtp_control%proj_mo = .FALSE.
+         dft_control%rtp_control%is_proj_mo = .FALSE.
       END IF
 
    END SUBROUTINE read_rtp_section
