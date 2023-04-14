@@ -38,7 +38,23 @@ MODULE cp_control_types
       INTEGER, DIMENSION(2)                :: distribution_layout
       INTEGER                              :: blocked
    END TYPE pw_grid_option
+! **************************************************************************************************
+! \brief parameters for EMD/RTP calculations involving MO projections
+! **************************************************************************************************
+   TYPE proj_mo_type
+      INTEGER, DIMENSION(:), ALLOCATABLE         :: ref_mo_index
+      INTEGER                                    :: ref_mo_spin
+      LOGICAL                                    :: sum_on_all_ref
+      INTEGER, DIMENSION(:), ALLOCATABLE         :: td_mo_index
+      INTEGER                                    :: td_mo_spin
+      CHARACTER(LEN=default_path_length)         :: ref_mo_file_name
+      TYPE(cp_fm_type), DIMENSION(:), &
+               ALLOCATABLE                       :: mo_ref
+   END TYPE proj_mo_type
 
+   TYPE proj_mo_p_type
+      TYPE(proj_mo_type), POINTER                :: proj_mo => NULL()
+   END TYPE proj_mo_p_type
 ! **************************************************************************************************
 ! \brief Control parameters for REAL_TIME_PROPAGATION calculations
 ! **************************************************************************************************
@@ -69,8 +85,8 @@ MODULE cp_control_types
       REAL(KIND=dp), DIMENSION(3)          :: vec_pot
       LOGICAL                              :: nl_gauge_transform
       LOGICAL                              :: is_proj_mo
-      TYPE(proj_mo_p_type), POINTER, &
-         DIMENSION(:)                      :: proj_mo_list => NULL()
+      TYPE(proj_mo_p_type), DIMENSION(:),&
+                    POINTER                :: proj_mo_list => NULL()
    END TYPE rtp_control_type
 ! **************************************************************************************************
 ! \brief Control parameters for DFTB calculations
@@ -192,22 +208,6 @@ MODULE cp_control_types
       REAL(KIND=dp)                        :: alpha0_hard
       REAL(KIND=dp)                        :: max_rad_local
    END TYPE gapw_control_type
-! **************************************************************************************************
-! \brief parameters for EMD/RTP calculations involving MO projections
-! **************************************************************************************************
-   TYPE proj_mo_type
-      INTEGER, DIMENSION(:), ALLOCATABLE         :: ref_mo_index
-      INTEGER                                    :: ref_mo_spin
-      LOGICAL                                    :: sum_on_all_ref
-      INTEGER, DIMENSION(:), ALLOCATABLE         :: td_mo_index
-      INTEGER                                    :: td_mo_spin
-      CHARACTER(LEN=default_path_length)         :: ref_mo_file_name
-      TYPE(cp_fm_type)                           :: mo_ref
-   END TYPE proj_mo_type
-
-   TYPE proj_mo_p_type
-      TYPE(proj_mo_type), POINTER           :: proj_mo => NULL()
-   END TYPE proj_mo_p_type
 ! **************************************************************************************************
 ! \brief parameters for calculations involving a time dependent electric field
 ! **************************************************************************************************
@@ -960,16 +960,21 @@ CONTAINS
    SUBROUTINE proj_mo_list_release(proj_mo_list)
       TYPE(proj_mo_p_type), DIMENSION(:), POINTER        :: proj_mo_list
 
-      INTEGER                                            :: i
+      INTEGER                                            :: i, mo_ref_nbr
 
       IF (ASSOCIATED(proj_mo_list)) THEN
          DO i = 1, SIZE(proj_mo_list)
             IF (ASSOCIATED(proj_mo_list(i)%proj_mo)) THEN
                IF (ALLOCATED(proj_mo_list(i)%proj_mo%ref_mo_index)) &
                   DEALLOCATE (proj_mo_list(i)%proj_mo%ref_mo_index)
+               IF (ALLOCATED(proj_mo_list(i)%proj_mo%mo_ref)) THEN
+                  DO mo_ref_nbr = 1, SIZE(proj_mo_list(i)%proj_mo%mo_ref)
+                     CALL cp_fm_release(proj_mo_list(i)%proj_mo%mo_ref(mo_ref_nbr))
+                  END DO
+                  DEALLOCATE(proj_mo_list(i)%proj_mo%mo_ref)
+               END IF
                IF (ALLOCATED(proj_mo_list(i)%proj_mo%td_mo_index)) &
                   DEALLOCATE (proj_mo_list(i)%proj_mo%td_mo_index)
-               CALL cp_fm_release(proj_mo_list(i)%proj_mo%mo_ref)
             END IF
          END DO
          DEALLOCATE (proj_mo_list)

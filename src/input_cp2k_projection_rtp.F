@@ -88,14 +88,13 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="REF_MO_SPIN", &
-                          description="Spin of the reference MOs to consider. 1 for ALPHA spin, 2 for BETA spin. "// &
+                          description="Spin of the reference MOs to consider. "// &
+                          "1 for ALPHA and 2 for BETA spin respectively. "// &
                           "If the reference MO is spin independent this key is not used.", &
                           usage="MO_TD_SPIN 1", &
                           default_i_val=1, &
-                          enum_i_vals=(/1, 2/), &
-                          enum_desc=s2a("ALPHA spin is used", &
-                           
-                          n_var=1, type_of_var=integer_t)
+                          n_var=1, type_of_var=integer_t, repeats=.FALSE.)
+                          
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 

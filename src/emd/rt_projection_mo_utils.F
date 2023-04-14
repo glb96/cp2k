@@ -16,21 +16,26 @@ MODULE rt_projection_mo_utils
    USE cp_files,                        ONLY: close_file,&
                                               open_file                                           
    USE cp_fm_types,                     ONLY: cp_fm_create,&
-                                              cp_fm_to_fm
+                                              cp_fm_to_fm,&
+                                              cp_fm_type,&
+                                              cp_fm_release
    USE cp_fm_struct,                    ONLY: cp_fm_struct_create,&
                                               cp_fm_struct_type,&
                                               cp_fm_struct_release
+   USE cp_fm_basic_linalg,              ONLY: cp_fm_trace
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_io_unit,&
                                               cp_logger_get_default_unit_nr,&
                                               cp_logger_type
    USE cp_output_handling,              ONLY: cp_print_key_generate_filename
+   USE cp_dbcsr_operations,             ONLY: cp_dbcsr_sm_fm_multiply
    USE dbcsr_api,                       ONLY: dbcsr_p_type
    USE input_constants,                 ONLY: proj_mo_ref_scf,&
                                               proj_mo_ref_xas_tdp
    USE input_section_types,             ONLY: &
         section_get_ival, section_get_keyword, section_release, section_type, section_vals_get, &
         section_vals_get_subs_vals, section_vals_type, section_vals_val_get, section_vals_val_set
+   USE kinds,                           ONLY: dp
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
    USE qs_kind_types,                   ONLY: get_qs_kind,&
@@ -68,14 +73,18 @@ CONTAINS
       
       TYPE(section_vals_type), POINTER                   :: input, proj_mo_section, print_key
       TYPE(cp_logger_type), POINTER                      :: logger 
-      INTEGER                                            :: i, nrep, n_rep_val, reftype
+      INTEGER                                            :: i, j, nrep, n_rep_val, reftype, nbr_mo_td_max
       TYPE(proj_mo_type), POINTER                        :: proj_mo
       INTEGER, DIMENSION(:), POINTER                     :: tmp_ints
-      TYPE(mo_set_type), DIMENSION(:), OPTIONAL, POINTER :: mos
+      TYPE(mo_set_type), DIMENSION(:),  POINTER          :: mos
 
 
       NULLIFY (rtp_control%proj_mo_list, tmp_ints, proj_mo, logger, &
                input, proj_mo_section, print_key, mos)
+      
+      IF (.NOT. rtp_control%fixed_ions) & 
+           CALL cp_abort(__LOCATION__, &
+                "DFT%REAL_TIME_PROPAGATION%PRINT%PROJECTION_MO not implemented for EMD yet.")
 
       CALL get_qs_env(qs_env, input=input, mos=mos)
       
@@ -136,9 +145,7 @@ CONTAINS
         ! Initialize the other parameters related to the TD mos.
         CALL section_vals_val_get(proj_mo_section, "SUM_ON_ALL_REF", i_rep_section=i, &
                                    l_val=proj_mo%sum_on_all_ref)
-        CALL section_vals_val_get(proj_mo_section, "TD_MO_INDEX", i_rep_section=i, &
-                                   i_vals=tmp_ints)
-        ALLOCATE (proj_mo%td_mo_index, SOURCE=tmp_ints(:))
+
         CALL section_vals_val_get(proj_mo_section, "TD_MO_SPIN", i_rep_section=i, &
                                    i_val=proj_mo%td_mo_spin)
         IF (proj_mo%td_mo_spin > SIZE(mos)) &
@@ -146,6 +153,27 @@ CONTAINS
                "You asked to project the time dependent BETA spin  while the "// &
                "real time DFT run has only one spin defined. "// &
                "Please set TD_MO_SPIN to 1 or use UKS.")
+
+        CALL section_vals_val_get(proj_mo_section, "TD_MO_INDEX", i_rep_section=i, &
+                                   i_vals=tmp_ints)
+
+        ALLOCATE (proj_mo%td_mo_index, SOURCE=tmp_ints(:))
+        nbr_mo_td_max = mos(proj_mo%td_mo_spin)%mo_coeff%matrix_struct%ncol_global
+        IF (proj_mo%td_mo_index(1) == -1) THEN
+          DEALLOCATE(proj_mo%td_mo_index)
+          ALLOCATE(proj_mo%td_mo_index(nbr_mo_td_max))
+          DO j = 1, nbr_mo_td_max
+            proj_mo%td_mo_index(i) = i
+          END DO
+        ELSE
+          DO j = 1, SIZE(proj_mo%td_mo_index)
+            IF (proj_mo%td_mo_index(i) > nbr_mo_td_max) &
+              CALL cp_abort(__LOCATION__, &
+                     "The MO number available in the Time Dependent run "// &
+                     "is smaller than the MO number you have required in TD_MO_INDEX.")
+          END DO
+        END IF
+
       END DO 
 
 
@@ -164,29 +192,33 @@ CONTAINS
       INTEGER                                            :: restart_unit, natom, ispin, nspins, &
                                                             nbr_ref_mo, real_mo_index, mo_index, &
                                                             nbr_mo_max, i
-      TYPE(mo_set_type), DIMENSION(:), POINTER           :: mo_qs, mo_ref
+      TYPE(mo_set_type), DIMENSION(:), POINTER           :: mo_qs, mo_ref_temp
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
+      TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_s
       TYPE(mp_para_env_type), POINTER                    :: para_env
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(cp_fm_struct_type), POINTER                   :: mo_ref_fmstruct
+      TYPE(cp_fm_type)                                   :: mo_coeff_temp
 
       
-      NULLIFY (mo_qs, mo_ref, qs_kind_set, particle_set, para_env, dft_control, &
-               mo_ref_fmstruct)
+      NULLIFY (mo_qs, mo_ref_temp, qs_kind_set, particle_set, para_env, dft_control, &
+               mo_ref_fmstruct, matrix_s)
 
       CALL get_qs_env(qs_env, &
                   qs_kind_set=qs_kind_set, &
                   particle_set=particle_set, &
                   dft_control=dft_control, &
+                  matrix_s_kp=matrix_s, &
                   mos=mo_qs, &
                   para_env=para_env)
+
       natom = SIZE(particle_set, 1)
       nspins = SIZE(mo_qs)
 
-      ALLOCATE (mo_ref(nspins))
+      ALLOCATE (mo_ref_temp(nspins))
       DO ispin = 1, nspins
-         CALL duplicate_mo_set(mo_ref(ispin), mo_qs(ispin))
+         CALL duplicate_mo_set(mo_ref_temp(ispin), mo_qs(ispin))
       END DO
 
       IF (para_env%is_source()) &
@@ -196,25 +228,32 @@ CONTAINS
                      file_status="OLD", &
                      unit_number=restart_unit)
       
-      CALL read_mos_restart_low(mo_ref, para_env=para_env, qs_kind_set=qs_kind_set, &
+      CALL read_mos_restart_low(mo_ref_temp, para_env=para_env, qs_kind_set=qs_kind_set, &
                              particle_set=particle_set, natom=natom, &
                              rst_unit=restart_unit, multiplicity=dft_control%multiplicity)
       
       IF (para_env%is_source()) CALL close_file(unit_number=restart_unit)
       
-      IF (proj_mo%ref_mo_spin > SIZE(mo_ref)) &
+      IF (proj_mo%ref_mo_spin > SIZE(mo_ref_temp)) &
          CALL cp_abort(__LOCATION__, &
             "You asked as reference spin the BETA one while the "// &
             "reference .wfn file has only one spin. Use a reference .wfn "// &
             "with 2 spins separated or set REF_MO_SPIN to 1")
 
       ! Store only the mos required
-      nbr_mo_max = mo_ref(proj_mo%ref_mo_spin)%mo_coeff%matrix_struct%ncol_global
+      nbr_mo_max = mo_ref_temp(proj_mo%ref_mo_spin)%mo_coeff%matrix_struct%ncol_global
       IF (proj_mo%ref_mo_index(1) == -1) THEN
          DEALLOCATE(proj_mo%ref_mo_index)
          ALLOCATE(proj_mo%ref_mo_index(nbr_mo_max))
          DO i = 1, nbr_mo_max
             proj_mo%ref_mo_index(i) = i
+         END DO
+      ELSE
+         DO i = 1, SIZE(proj_mo%ref_mo_index)
+              IF (proj_mo%ref_mo_index(i) > nbr_mo_max) &
+                 CALL cp_abort(__LOCATION__, &
+                     "The MO number available in the Reference SCF "// &
+                     "is smaller than the MO number you have required in REF_MO_INDEX.")
          END DO
       END IF
       nbr_ref_mo = SIZE(proj_mo%ref_mo_index)
@@ -223,32 +262,41 @@ CONTAINS
       IF (nbr_ref_mo > nbr_mo_max) &
          CALL cp_abort(__LOCATION__, &
          "The number of reference mo is larger then the total number of available one in the .wfn file.")
-
-      ! initialize the ref_mo which is saved
+      
+      ! Store
+      ALLOCATE(proj_mo%mo_ref(nbr_ref_mo))
       CALL cp_fm_struct_create(mo_ref_fmstruct, &
-         context=mo_ref(proj_mo%ref_mo_spin)%mo_coeff%matrix_struct%context, &
-         nrow_global=mo_ref(proj_mo%ref_mo_spin)%mo_coeff%matrix_struct%nrow_global, &
-         ncol_global=nbr_ref_mo)
-      CALL cp_fm_create(proj_mo%mo_ref, mo_ref_fmstruct, 'mo_ref')
+         context=mo_ref_temp(proj_mo%ref_mo_spin)%mo_coeff%matrix_struct%context, &
+         nrow_global=mo_ref_temp(proj_mo%ref_mo_spin)%mo_coeff%matrix_struct%nrow_global, &
+         ncol_global=1)
+      CALL cp_fm_create(mo_coeff_temp, mo_ref_fmstruct, 'mo_ref')
 
-      ! fill with the reference mo values (column per column)
       DO mo_index = 1, nbr_ref_mo
         real_mo_index = proj_mo%ref_mo_index(mo_index)
         IF (real_mo_index >  nbr_mo_max) &
            CALL cp_abort(__LOCATION__, &
               "One of reference mo index is larger then the total number of available mo in the .wfn file.")
 
-        CALL cp_fm_to_fm(mo_ref(proj_mo%ref_mo_spin)%mo_coeff, proj_mo%mo_ref, &
+        ! fill with the reference mo values
+        CALL cp_fm_create(proj_mo%mo_ref(mo_index), mo_ref_fmstruct, 'mo_ref')
+        CALL cp_fm_to_fm(mo_ref_temp(proj_mo%ref_mo_spin)%mo_coeff, mo_coeff_temp, &
                                 ncol=1, &
                                 source_start=real_mo_index, &
-                                target_start=mo_index)
+                                target_start=1)
+
+        ! multiply with overlap matrix to save time later on
+        CALL cp_dbcsr_sm_fm_multiply(matrix_s(1, 1)%matrix, mo_coeff_temp,  proj_mo%mo_ref(mo_index), ncol=1)
+        !CALL cp_fm_to_fm(mo_coeff_temp, proj_mo%mo_ref(mo_index))
       END DO
 
       ! Clean temporary variables 
       DO ispin = 1, nspins
-        CALL deallocate_mo_set(mo_ref(ispin))
+        CALL deallocate_mo_set(mo_ref_temp(ispin))
       END DO
+
       CALL cp_fm_struct_release(mo_ref_fmstruct)
+      CALL cp_fm_release(mo_coeff_temp)
+
 
    END SUBROUTINE read_reference_mo_from_wfn
 
@@ -261,23 +309,32 @@ CONTAINS
    SUBROUTINE compute_and_write_proj_mo(qs_env, mos_new, proj_mo)
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_new
-      TYPE(proj_mo_type), POINTER                        :: proj_mo
+      TYPE(proj_mo_type)                                 :: proj_mo
       
-      INTEGER                                            :: nbr_ref_mo
-      TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_s
+      INTEGER                                            :: i, nbr_ref_mo, nbr_ref_td
       REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: popu, phase
+      TYPE(dft_control_type), POINTER                    :: dft_control
+      TYPE(section_vals_type), POINTER                   :: input, proj_mo_section
 
-      NULLIFY(matrix_s)
+      CALL get_qs_env(qs_env, &
+               dft_control=dft_control, &
+               input=input)
+
+      IF (.NOT. dft_control%rtp_control%fixed_ions) &
+           CALL cp_abort(__LOCATION__, &
+                "DFT%REAL_TIME_PROPAGATION%PRINT%PROJECTION_MO not implemented for EMD yet.")
+
+      proj_mo_section => section_vals_get_subs_vals(input, "DFT%REAL_TIME_PROPAGATION%PRINT%PROJECTION_MO")
 
       nbr_ref_mo = SIZE(proj_mo%ref_mo_index)
-      ALLOCATE(popu(SIZE(nbr_ref_mo))
-      ALLOCATE(phase(SIZE(nbr_ref_mo))
+      nbr_ref_td = SIZE(proj_mo%td_mo_index)
+      
 
-      CALL get_qs_env(qs_env, matrix_s_kp=matrix_s)
-     
-
-      CALL compute_proj_mo(popu, phase, mo_td, proj_mo, matrix_s)
-
+      ALLOCATE(popu(nbr_ref_td))
+      ALLOCATE(phase(nbr_ref_td))
+      DO i = 1, nbr_ref_mo
+         CALL compute_proj_mo(popu, phase, mos_new, proj_mo, i)
+      END DO
       
       DEALLOCATE(popu)
       DEALLOCATE(phase)
@@ -290,31 +347,55 @@ CONTAINS
 !> \param  ... 
 !> \author Guillaume Le Breton
 ! **************************************************************************************************
-   SUBROUTINE compute_proj_mo(popu, phase, mos_new, proj_mo, matrix_s)
+   SUBROUTINE compute_proj_mo(popu, phase, mos_new, proj_mo, i)
       REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: popu, phase
       TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_new
-      TYPE(proj_mo_type), POINTER                        :: proj_mo
-      TYPE(dbcsr_p_type), DIMENSION(:, :), POINTER       :: matrix_s
+      TYPE(proj_mo_type)                                 :: proj_mo
+      INTEGER                                            :: i
 
-      INTEGER                                            :: i, nbr_ref_mo
+      INTEGER                                            :: j, nbr_ref_td, spin_td
       REAL(KIND=dp)                                      :: real_proj, imag_proj
+      TYPE(cp_fm_struct_type), POINTER                   :: mo_ref_fmstruct
+      TYPE(cp_fm_type)                                   :: mo_coeff_temp
 
-      nbr_ref_mo = SIZE(proj_mo%ref_mo_index)
+      nbr_ref_td = SIZE(popu)
       spin_td = proj_mo%td_mo_spin
 
-      DO i = 1, nbr_ref_mo
+      CALL cp_fm_struct_create(mo_ref_fmstruct, &
+         context=mos_new(1)%matrix_struct%context, &
+         nrow_global=mos_new(1)%matrix_struct%nrow_global, &
+         ncol_global=1)
+      CALL cp_fm_create(mo_coeff_temp, mo_ref_fmstruct, 'mo_temp')
+
+
+      DO j = 1, nbr_ref_td
          ! Real part of the projection:
          real_proj = 0.0_dp
-         mos_new(2*spin_td-1)
+         CALL cp_fm_to_fm(mos_new(2*spin_td-1), mo_coeff_temp, &
+                                ncol=1, &
+                                source_start=proj_mo%td_mo_index(j), &
+                                target_start=1)
+         
+         CALL cp_fm_trace(mo_coeff_temp, proj_mo%mo_ref(i), real_proj) 
+
          ! Imaginary part of the projection
          imag_proj = 0.0_dp
+         CALL cp_fm_to_fm(mos_new(2*spin_td), mo_coeff_temp, &
+                                ncol=1, &
+                                source_start=proj_mo%td_mo_index(j), &
+                                target_start=1)
+
+         CALL cp_fm_trace(mo_coeff_temp, proj_mo%mo_ref(i), imag_proj)
          
-         mos_new(2*spin_td) 
+         ! Store the result
+         phase(j) = ATAN2(imag_proj, real_proj) ! in radians
+         popu(j) = real_proj**2 + imag_proj**2
 
       END DO
 
+      CALL cp_fm_struct_release(mo_ref_fmstruct)
+      CALL cp_fm_release(mo_coeff_temp)
 
-      WRITE(*, *) 'for compilation'
    END SUBROUTINE compute_proj_mo
 
 ! **************************************************************************************************

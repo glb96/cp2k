@@ -247,7 +247,8 @@ CONTAINS
                END IF
                IF (dft_control%rtp_control%is_proj_mo) THEN
                   DO i = 1, SIZE(dft_control%rtp_control%proj_mo_list)
-                     CALL compute_and_write_proj_mo(qs_env, mos_new, dft_control%rtp_control%proj_mo_list(i))
+                  WRITE(*, *) 'iter:', i
+                     CALL compute_and_write_proj_mo(qs_env, mos_new, dft_control%rtp_control%proj_mo_list(i)%proj_mo)
                   END DO 
                END IF
             END IF
