@@ -172,6 +172,9 @@ CONTAINS
       ! done everywhere like this
       IF (rtp%do_hfx) CALL rtp_hfx_rebuild(qs_env)
 
+      ! Setup the MO projection environment if required
+      IF (rtp_control%is_proj_mo) CALL init_mo_projection(qs_env, rtp_control)
+      
       CALL init_propagation_run(qs_env)
       IF (.NOT. rtp_control%fixed_ions) THEN
          !derivativs of the overlap needed for EMD
@@ -188,9 +191,6 @@ CONTAINS
          rtp_control%initial_step = .FALSE.
          rtp%energy_old = energy%total
       END IF
-
-      ! Setup the MO projection environment if required
-      IF (rtp_control%is_proj_mo) CALL init_mo_projection(qs_env, rtp_control)
 
    END SUBROUTINE rt_prop_setup
 

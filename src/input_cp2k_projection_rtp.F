@@ -109,13 +109,11 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="TD_MO_INDEX", &
                           description="Indexes of the time dependent MOs to project on the reference MOs. "// &
-                          "This keyword can be repeated several times "// &
-                          "(useful if you have to specify many indexes). "// &
                           "One file will be generated per index defined."// &
                           "Set to -1 to project all the TD MOs at once (only one output file).", &
                           usage="MO_TD_INDEX 1 2", &
                           default_i_vals=(/1/), &
-                          n_var=-1, type_of_var=integer_t, repeats=.TRUE.)
+                          n_var=-1, type_of_var=integer_t, repeats=.FALSE.)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -127,13 +125,12 @@ CONTAINS
                           n_var=1, type_of_var=integer_t)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
-
+      
+      ! The results for different time step are stored in the same file by default:
       CALL cp_print_key_section_create(subsection, __LOCATION__, name="PRINT", &
                                        description="How to print the MO projection", &
-                                       common_iter_levels=-1, &
-                                       each_iter_names=s2a("MD"), &
-                                       each_iter_values=(/1/), &
-                                       filename="proj_mo")
+                                       common_iter_levels=999999999, & 
+                                       filename="PROJ_MO")
       CALL section_add_subsection(section, subsection)
       CALL section_release(subsection)
 

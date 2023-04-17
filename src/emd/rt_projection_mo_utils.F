@@ -27,7 +27,12 @@ MODULE rt_projection_mo_utils
                                               cp_logger_get_default_io_unit,&
                                               cp_logger_get_default_unit_nr,&
                                               cp_logger_type
-   USE cp_output_handling,              ONLY: cp_print_key_generate_filename
+   USE cp_output_handling,              ONLY: cp_iter_string,&
+                                              cp_p_file,&
+                                              cp_print_key_finished_output,&
+                                              cp_print_key_generate_filename,&
+                                              cp_print_key_should_output,&
+                                              cp_print_key_unit_nr
    USE cp_dbcsr_operations,             ONLY: cp_dbcsr_sm_fm_multiply
    USE dbcsr_api,                       ONLY: dbcsr_p_type
    USE input_constants,                 ONLY: proj_mo_ref_scf,&
@@ -35,7 +40,8 @@ MODULE rt_projection_mo_utils
    USE input_section_types,             ONLY: &
         section_get_ival, section_get_keyword, section_release, section_type, section_vals_get, &
         section_vals_get_subs_vals, section_vals_type, section_vals_val_get, section_vals_val_set
-   USE kinds,                           ONLY: dp
+   USE kinds,                           ONLY: default_string_length,&
+                                              dp
    USE qs_environment_types,            ONLY: get_qs_env,&
                                               qs_environment_type
    USE qs_kind_types,                   ONLY: get_qs_kind,&
@@ -92,8 +98,8 @@ CONTAINS
 
       ! Read the input section and load the reference MOs
       CALL section_vals_get(proj_mo_section, n_repetition=nrep)
-
       ALLOCATE (rtp_control%proj_mo_list(nrep))
+
       DO i = 1, nrep
         NULLIFY (rtp_control%proj_mo_list(i)%proj_mo)
         ALLOCATE (rtp_control%proj_mo_list(i)%proj_mo)
@@ -176,7 +182,6 @@ CONTAINS
 
       END DO 
 
-
    END SUBROUTINE init_mo_projection
 
 ! **************************************************************************************************
@@ -189,6 +194,7 @@ CONTAINS
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(proj_mo_type), POINTER                        :: proj_mo
             
+      LOGICAL                                            :: is_file
       INTEGER                                            :: restart_unit, natom, ispin, nspins, &
                                                             nbr_ref_mo, real_mo_index, mo_index, &
                                                             nbr_mo_max, i
@@ -221,13 +227,19 @@ CONTAINS
          CALL duplicate_mo_set(mo_ref_temp(ispin), mo_qs(ispin))
       END DO
 
-      IF (para_env%is_source()) &
+      IF (para_env%is_source()) THEN 
+         INQUIRE (FILE=TRIM(proj_mo%ref_mo_file_name), exist=is_file)
+         IF (.NOT. is_file) & 
+            CALL cp_abort(__LOCATION__, &
+            "Reference file not found! Name of the file CP2K looked for: " // TRIM(proj_mo%ref_mo_file_name))
+
          CALL open_file(file_name=proj_mo%ref_mo_file_name, &
                      file_action="READ", &
                      file_form="UNFORMATTED", &
                      file_status="OLD", &
                      unit_number=restart_unit)
-      
+      END IF
+
       CALL read_mos_restart_low(mo_ref_temp, para_env=para_env, qs_kind_set=qs_kind_set, &
                              particle_set=particle_set, natom=natom, &
                              rst_unit=restart_unit, multiplicity=dft_control%multiplicity)
@@ -293,6 +305,7 @@ CONTAINS
       DO ispin = 1, nspins
         CALL deallocate_mo_set(mo_ref_temp(ispin))
       END DO
+      DEALLOCATE(mo_ref_temp)
 
       CALL cp_fm_struct_release(mo_ref_fmstruct)
       CALL cp_fm_release(mo_coeff_temp)
@@ -306,34 +319,54 @@ CONTAINS
 !> \param  ... UNMATCHED_PROCEDURE_ARGUMENT: please check 
 !> \author Guillaume Le Breton
 ! **************************************************************************************************
-   SUBROUTINE compute_and_write_proj_mo(qs_env, mos_new, proj_mo)
+   SUBROUTINE compute_and_write_proj_mo(qs_env, mos_new, proj_mo, n_proj)
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_new
       TYPE(proj_mo_type)                                 :: proj_mo
+      INTEGER                                            :: n_proj
       
       INTEGER                                            :: i, nbr_ref_mo, nbr_ref_td
       REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: popu, phase
+      REAL(KIND=dp)                                      :: popu_tot
       TYPE(dft_control_type), POINTER                    :: dft_control
       TYPE(section_vals_type), POINTER                   :: input, proj_mo_section
+      TYPE(cp_logger_type), POINTER                      :: logger
+
+      NULLIFY( dft_control, input, proj_mo_section, logger)
+      
+      logger => cp_get_default_logger()
 
       CALL get_qs_env(qs_env, &
                dft_control=dft_control, &
                input=input)
+    
+      proj_mo_section => section_vals_get_subs_vals(input, "DFT%REAL_TIME_PROPAGATION%PRINT%PROJECTION_MO", i_rep_section=n_proj)
+
+      ! STOP if not the required time step
+      IF (.NOT. BTEST(cp_print_key_should_output(logger%iter_info, &
+                                             proj_mo_section, "PRINT"), &
+                                             cp_p_file)) &
+         RETURN
 
       IF (.NOT. dft_control%rtp_control%fixed_ions) &
            CALL cp_abort(__LOCATION__, &
                 "DFT%REAL_TIME_PROPAGATION%PRINT%PROJECTION_MO not implemented for EMD yet.")
 
-      proj_mo_section => section_vals_get_subs_vals(input, "DFT%REAL_TIME_PROPAGATION%PRINT%PROJECTION_MO")
-
       nbr_ref_mo = SIZE(proj_mo%ref_mo_index)
       nbr_ref_td = SIZE(proj_mo%td_mo_index)
-      
 
       ALLOCATE(popu(nbr_ref_td))
       ALLOCATE(phase(nbr_ref_td))
       DO i = 1, nbr_ref_mo
          CALL compute_proj_mo(popu, phase, mos_new, proj_mo, i)
+
+         IF (proj_mo%sum_on_all_ref) THEN
+            popu_tot = SUM(popu)
+            CALL write_proj_mo(qs_env, proj_mo_section, proj_mo, i, popu_tot=popu_tot)
+         ELSE
+
+            CALL write_proj_mo(qs_env, proj_mo_section, proj_mo, i, popu=popu, phase=phase)
+         END IF
       END DO
       
       DEALLOCATE(popu)
@@ -351,12 +384,16 @@ CONTAINS
       REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: popu, phase
       TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_new
       TYPE(proj_mo_type)                                 :: proj_mo
-      INTEGER                                            :: i
+      INTEGER                                            :: i, handle
 
+      CHARACTER(len=*), PARAMETER                        :: routineN = 'rt_compute_proj_mo'
       INTEGER                                            :: j, nbr_ref_td, spin_td
       REAL(KIND=dp)                                      :: real_proj, imag_proj
       TYPE(cp_fm_struct_type), POINTER                   :: mo_ref_fmstruct
       TYPE(cp_fm_type)                                   :: mo_coeff_temp
+
+
+      CALL timeset(routineN, handle)
 
       nbr_ref_td = SIZE(popu)
       spin_td = proj_mo%td_mo_spin
@@ -392,9 +429,11 @@ CONTAINS
          popu(j) = real_proj**2 + imag_proj**2
 
       END DO
-
+      
       CALL cp_fm_struct_release(mo_ref_fmstruct)
       CALL cp_fm_release(mo_coeff_temp)
+      
+      CALL timestop(handle)
 
    END SUBROUTINE compute_proj_mo
 
@@ -403,8 +442,65 @@ CONTAINS
 !> \param  ... 
 !> \author Guillaume Le Breton
 ! **************************************************************************************************
-   SUBROUTINE write_proj_mo()
-      WRITE(*, *) 'for compilation'
+   SUBROUTINE write_proj_mo(qs_env, proj_mo_section, proj_mo, i, popu, phase, popu_tot)
+      TYPE(qs_environment_type), POINTER                 :: qs_env
+      TYPE(section_vals_type), POINTER                   :: proj_mo_section
+      TYPE(proj_mo_type)                                 :: proj_mo
+      INTEGER                                            :: i 
+
+      REAL(KIND=dp), DIMENSION(:), OPTIONAL              :: popu, phase
+      REAL(KIND=dp), OPTIONAL                            :: popu_tot
+
+      CHARACTER(LEN=default_string_length)               :: filename, ext
+      INTEGER                                            :: output_unit, print_unit, j
+      TYPE(cp_logger_type), POINTER                      :: logger
+
+
+      NULLIFY( logger)
+
+      logger => cp_get_default_logger()
+      output_unit = cp_logger_get_default_io_unit(logger)
+
+      IF (output_unit > 0) THEN
+         ! Filename is update wrt the reference MO number
+         ext = "-REF-"// &
+               TRIM(ACHAR(IACHAR('0') + proj_mo%ref_mo_index(i)))// &
+               ".dat"
+         print_unit = cp_print_key_unit_nr(logger, proj_mo_section, "PRINT", &
+                                           extension=TRIM(ext))
+
+         IF (print_unit /= output_unit) THEN
+            INQUIRE (UNIT=print_unit, NAME=filename)
+            WRITE (UNIT=output_unit, FMT="(/,T2,A,2(/,T3,A),/)") &
+               "PROJECTION MO", "The projection of the TD MOs is done in the file:", &
+               TRIM(filename)
+            WRITE (UNIT=print_unit, FMT="(/,(T2,A,T40,I6))") &
+               "Real time propagation step:", qs_env%sim_step
+         ELSE
+            WRITE (UNIT=output_unit, FMT="(/,T2,A)") "PROJECTION MO"
+         END IF
+
+         WRITE (print_unit, "(T3,A)") & 
+            "Projection on the MO number "// &
+            TRIM(ACHAR(IACHAR('0') + proj_mo%ref_mo_index(i)))// &
+            " from the reference file "// &
+            TRIM(proj_mo%ref_mo_file_name)
+
+         IF (proj_mo%sum_on_all_ref) THEN
+            WRITE (print_unit, "(T3, A, E16.8)") & 
+               "The sum over all the TD MOs population:", popu_tot
+         ELSE
+            WRITE (print_unit, "(T3,A)") &
+               "For each TD MOs required is printed: Population & Phase [rad] "
+            DO j = 1, SIZE(popu)
+               WRITE (print_unit, "(T5,2(E16.8, E16.8, 1X))")  popu(j), phase(j)
+            END DO 
+         END IF
+
+         CALL cp_print_key_finished_output(print_unit, logger, proj_mo_section, "PRINT")
+
+      END IF 
+
    END SUBROUTINE write_proj_mo
 
 END MODULE rt_projection_mo_utils

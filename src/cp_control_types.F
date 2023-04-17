@@ -975,6 +975,7 @@ CONTAINS
                END IF
                IF (ALLOCATED(proj_mo_list(i)%proj_mo%td_mo_index)) &
                   DEALLOCATE (proj_mo_list(i)%proj_mo%td_mo_index)
+               DEALLOCATE (proj_mo_list(i)%proj_mo)
             END IF
          END DO
          DEALLOCATE (proj_mo_list)

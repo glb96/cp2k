@@ -116,7 +116,7 @@ CONTAINS
       INTEGER, INTENT(in)                                :: run_type
       REAL(dp), INTENT(in), OPTIONAL                     :: delta_iter, used_time
 
-      INTEGER                                            :: i, n_electrons, nspin, output_unit, spin
+      INTEGER                                            :: n_proj, n_electrons, nspin, output_unit, spin
       REAL(dp)                                           :: orthonormality, tot_rho_r
       REAL(KIND=dp), DIMENSION(:), POINTER               :: qs_tot_rho_r
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
@@ -246,9 +246,16 @@ CONTAINS
                   CALL dbcsr_deallocate_matrix_set(P_im)
                END IF
                IF (dft_control%rtp_control%is_proj_mo) THEN
-                  DO i = 1, SIZE(dft_control%rtp_control%proj_mo_list)
-                  WRITE(*, *) 'iter:', i
-                     CALL compute_and_write_proj_mo(qs_env, mos_new, dft_control%rtp_control%proj_mo_list(i)%proj_mo)
+                  DO n_proj = 1, SIZE(dft_control%rtp_control%proj_mo_list)
+                     WRITE(*, *) __LOCATION__, 'iter:', n_proj, 'size of the array:',  & 
+                        SIZE(dft_control%rtp_control%proj_mo_list)
+
+                     !IF (BTEST(cp_print_key_should_output(logger%iter_info, &
+                     !                            dft_section, &
+                     !                           "REAL_TIME_PROPAGATION%PRINT%PROJECTION_MO%PRINT"), & 
+                     !                           cp_p_file)) & 
+                     CALL compute_and_write_proj_mo(qs_env, mos_new, &
+                          dft_control%rtp_control%proj_mo_list(n_proj)%proj_mo, n_proj)
                   END DO 
                END IF
             END IF
@@ -867,6 +874,10 @@ CONTAINS
          WRITE (unit_nr, "(T5,3(A,A,E16.8,1X))") &
             (TRIM(rlab(i)), "=", to_write(i), i=1, 3)
       END IF
+
+      CALL cp_print_key_finished_output(unit_nr, logger, dft_section, &
+                                        "REAL_TIME_PROPAGATION%PRINT%FIELD")
+
    END SUBROUTINE print_field_applied
 
 END MODULE rt_propagation_output
