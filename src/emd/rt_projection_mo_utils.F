@@ -142,7 +142,13 @@ CONTAINS
                 "For REFERENCE_TYPE XAS_TDP one must define the name "// &
                 "of the .wfn file to read the reference MO from. Please define REF_MO_FILE_NAME.")
           END IF
+          ALLOCATE (proj_mo%ref_mo_index(1))
+          ! XAS restart files contain only one excited state
+          proj_mo%ref_mo_index(1) = 1
+          proj_mo%ref_mo_spin = 1
           ! Read XAS TDP mos
+          CALL read_reference_mo_from_wfn(qs_env, proj_mo, xas_ref=.TRUE.)
+
         END IF
         
         ! Initialize the other parameters related to the TD mos.
@@ -190,11 +196,12 @@ CONTAINS
 !> \param  proj_mo...
 !> \author Guillaume Le Breton (04.2023)
 ! **************************************************************************************************
-   SUBROUTINE read_reference_mo_from_wfn(qs_env, proj_mo)
+   SUBROUTINE read_reference_mo_from_wfn(qs_env, proj_mo, xas_ref)
       TYPE(qs_environment_type), POINTER                 :: qs_env
       TYPE(proj_mo_type), POINTER                        :: proj_mo
-            
-      LOGICAL                                            :: is_file
+      LOGICAL, OPTIONAL                                  :: xas_ref
+
+      LOGICAL                                            :: is_file, my_xasref
       INTEGER                                            :: restart_unit, natom, ispin, nspins, &
                                                             nbr_ref_mo, real_mo_index, mo_index, &
                                                             nbr_mo_max, i_ref
@@ -211,6 +218,9 @@ CONTAINS
       NULLIFY (mo_qs, mo_ref_temp, qs_kind_set, particle_set, para_env, dft_control, &
                mo_ref_fmstruct, matrix_s)
 
+      my_xasref = .FALSE. 
+      IF (PRESENT(xas_ref)) my_xasref = xas_ref
+
       CALL get_qs_env(qs_env, &
                   qs_kind_set=qs_kind_set, &
                   particle_set=particle_set, &
@@ -220,12 +230,21 @@ CONTAINS
                   para_env=para_env)
 
       natom = SIZE(particle_set, 1)
-      nspins = SIZE(mo_qs)
-
-      ALLOCATE (mo_ref_temp(nspins))
-      DO ispin = 1, nspins
-         CALL duplicate_mo_set(mo_ref_temp(ispin), mo_qs(ispin))
-      END DO
+      
+      ! If the restart comes from DFT%XAS_TDP%PRINT%RESTART_WFN, then always 2 spins are saved
+      IF (my_xasref) THEN
+         nspins = 2
+         ALLOCATE (mo_ref_temp(nspins))
+         DO ispin = 1, nspins
+            CALL duplicate_mo_set(mo_ref_temp(ispin), mo_qs(1))
+         END DO
+      ELSE
+         nspins = SIZE(mo_qs)
+         ALLOCATE (mo_ref_temp(nspins))
+         DO ispin = 1, nspins
+            CALL duplicate_mo_set(mo_ref_temp(ispin), mo_qs(ispin))
+         END DO
+      END IF
 
       IF (para_env%is_source()) THEN 
          INQUIRE (FILE=TRIM(proj_mo%ref_mo_file_name), exist=is_file)
@@ -239,10 +258,13 @@ CONTAINS
                      file_status="OLD", &
                      unit_number=restart_unit)
       END IF
-
+      
       CALL read_mos_restart_low(mo_ref_temp, para_env=para_env, qs_kind_set=qs_kind_set, &
                              particle_set=particle_set, natom=natom, &
-                             rst_unit=restart_unit, multiplicity=dft_control%multiplicity)
+                             rst_unit=restart_unit)
+      !ALL read_mos_restart_low(mo_ref_temp, para_env=para_env, qs_kind_set=qs_kind_set, &
+      !                      particle_set=particle_set, natom=natom, &
+      !                      rst_unit=restart_unit, multiplicity=dft_control%multiplicity)
       
       IF (para_env%is_source()) CALL close_file(unit_number=restart_unit)
       
@@ -363,10 +385,6 @@ CONTAINS
          DO i_ref = 1, nbr_ref_mo
             CALL compute_proj_mo(popu, phase, mos_new, proj_mo, i_ref)
             sum_popu_ref(:) = sum_popu_ref(:) + popu(:)
-            WRITE(*, *) 'popu(:)', popu
-            WRITE(*, *) 'sum_popu_ref(:)', sum_popu_ref
-            WRITE(*, *) 'SUM(sum_popu_ref)', SUM(sum_popu_ref)
-            WRITE(*, *) 'SUM(sum_popu_ref(:))', SUM(sum_popu_ref(:))
          END DO
          IF (proj_mo%sum_on_all_td) THEN
             CALL write_proj_mo(qs_env, print_mo_section, proj_mo, popu_tot=SUM(sum_popu_ref), n_proj=n_proj)
@@ -423,7 +441,6 @@ CONTAINS
 
 
       DO j_td = 1, nbr_ref_td
-         WRITE(*, *) 'j_td= ', j_td, 'proj_mo%td_mo_index(j_td)= ', proj_mo%td_mo_index(j_td)
          ! Real part of the projection:
          real_proj = 0.0_dp
          CALL cp_fm_to_fm(mos_new(2*spin_td-1), mo_coeff_temp, &
