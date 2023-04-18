@@ -2171,6 +2171,7 @@ CONTAINS
          CALL section_vals_val_get(efield_section, "VEC_POT_INITIAL", i_rep_section=i, &
                                    r_vals=tmp_vals)
          efield%vec_pot_initial = tmp_vals
+
          IF (efield%envelop_id == constant_env) THEN
             ALLOCATE (efield%envelop_i_vars(2))
             tmp_section => section_vals_get_subs_vals(efield_section, "CONSTANT_ENV", i_rep_section=i)
