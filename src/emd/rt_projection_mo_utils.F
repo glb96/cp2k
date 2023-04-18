@@ -79,7 +79,7 @@ CONTAINS
       
       TYPE(section_vals_type), POINTER                   :: input, proj_mo_section, print_key
       TYPE(cp_logger_type), POINTER                      :: logger 
-      INTEGER                                            :: i, j, nrep, n_rep_val, reftype, nbr_mo_td_max
+      INTEGER                                            :: i_rep, j_td, nrep, n_rep_val, reftype, nbr_mo_td_max
       TYPE(proj_mo_type), POINTER                        :: proj_mo
       INTEGER, DIMENSION(:), POINTER                     :: tmp_ints
       TYPE(mo_set_type), DIMENSION(:),  POINTER          :: mos
@@ -100,15 +100,15 @@ CONTAINS
       CALL section_vals_get(proj_mo_section, n_repetition=nrep)
       ALLOCATE (rtp_control%proj_mo_list(nrep))
 
-      DO i = 1, nrep
-        NULLIFY (rtp_control%proj_mo_list(i)%proj_mo)
-        ALLOCATE (rtp_control%proj_mo_list(i)%proj_mo)
-        proj_mo => rtp_control%proj_mo_list(i)%proj_mo
+      DO i_rep = 1, nrep
+        NULLIFY (rtp_control%proj_mo_list(i_rep)%proj_mo)
+        ALLOCATE (rtp_control%proj_mo_list(i_rep)%proj_mo)
+        proj_mo => rtp_control%proj_mo_list(i_rep)%proj_mo
         
-        CALL section_vals_val_get(proj_mo_section, "REFERENCE_TYPE", i_rep_section=i, &
+        CALL section_vals_val_get(proj_mo_section, "REFERENCE_TYPE", i_rep_section=i_rep, &
                                    i_val=reftype)
 
-        CALL section_vals_val_get(proj_mo_section, "REF_MO_FILE_NAME", i_rep_section=i, &
+        CALL section_vals_val_get(proj_mo_section, "REF_MO_FILE_NAME", i_rep_section=i_rep, &
                                    c_val=proj_mo%ref_mo_file_name)
          
         IF (reftype == proj_mo_ref_scf) THEN
@@ -126,10 +126,10 @@ CONTAINS
              END IF
           END IF
           
-          CALL section_vals_val_get(proj_mo_section, "REF_MO_INDEX", i_rep_section=i, &
+          CALL section_vals_val_get(proj_mo_section, "REF_MO_INDEX", i_rep_section=i_rep, &
                                       i_vals=tmp_ints)
           ALLOCATE (proj_mo%ref_mo_index, SOURCE=tmp_ints(:))
-          CALL section_vals_val_get(proj_mo_section, "REF_MO_SPIN", i_rep_section=i, &
+          CALL section_vals_val_get(proj_mo_section, "REF_MO_SPIN", i_rep_section=i_rep, &
                                       i_val=proj_mo%ref_mo_spin)
           
           ! Read the SCF mos and store the one required
@@ -145,14 +145,11 @@ CONTAINS
           ! Read XAS TDP mos
         END IF
         
-        WRITE(*, *) 'default value for REF_MO_FILE_NAME = ', TRIM(proj_mo%ref_mo_file_name)
-         
-        
         ! Initialize the other parameters related to the TD mos.
-        CALL section_vals_val_get(proj_mo_section, "SUM_ON_ALL_REF", i_rep_section=i, &
+        CALL section_vals_val_get(proj_mo_section, "SUM_ON_ALL_REF", i_rep_section=i_rep, &
                                    l_val=proj_mo%sum_on_all_ref)
 
-        CALL section_vals_val_get(proj_mo_section, "TD_MO_SPIN", i_rep_section=i, &
+        CALL section_vals_val_get(proj_mo_section, "TD_MO_SPIN", i_rep_section=i_rep, &
                                    i_val=proj_mo%td_mo_spin)
         IF (proj_mo%td_mo_spin > SIZE(mos)) &
            CALL cp_abort(__LOCATION__, &
@@ -160,7 +157,7 @@ CONTAINS
                "real time DFT run has only one spin defined. "// &
                "Please set TD_MO_SPIN to 1 or use UKS.")
 
-        CALL section_vals_val_get(proj_mo_section, "TD_MO_INDEX", i_rep_section=i, &
+        CALL section_vals_val_get(proj_mo_section, "TD_MO_INDEX", i_rep_section=i_rep, &
                                    i_vals=tmp_ints)
 
         ALLOCATE (proj_mo%td_mo_index, SOURCE=tmp_ints(:))
@@ -168,19 +165,19 @@ CONTAINS
         IF (proj_mo%td_mo_index(1) == -1) THEN
           DEALLOCATE(proj_mo%td_mo_index)
           ALLOCATE(proj_mo%td_mo_index(nbr_mo_td_max))
-          DO j = 1, nbr_mo_td_max
-            proj_mo%td_mo_index(i) = i
+          DO j_td = 1, nbr_mo_td_max
+            proj_mo%td_mo_index(j_td) = j_td
           END DO
         ELSE
-          DO j = 1, SIZE(proj_mo%td_mo_index)
-            IF (proj_mo%td_mo_index(i) > nbr_mo_td_max) &
-              CALL cp_abort(__LOCATION__, &
+           DO j_td = 1, SIZE(proj_mo%td_mo_index)
+              IF (proj_mo%td_mo_index(j_td) > nbr_mo_td_max) &
+                  CALL cp_abort(__LOCATION__, &
                      "The MO number available in the Time Dependent run "// &
                      "is smaller than the MO number you have required in TD_MO_INDEX.")
-          END DO
+            END DO
         END IF
 
-        CALL section_vals_val_get(proj_mo_section, "SUM_ON_ALL_TD", i_rep_section=i, &
+        CALL section_vals_val_get(proj_mo_section, "SUM_ON_ALL_TD", i_rep_section=i_rep, &
                                    l_val=proj_mo%sum_on_all_td)
 
       END DO 
@@ -200,7 +197,7 @@ CONTAINS
       LOGICAL                                            :: is_file
       INTEGER                                            :: restart_unit, natom, ispin, nspins, &
                                                             nbr_ref_mo, real_mo_index, mo_index, &
-                                                            nbr_mo_max, i
+                                                            nbr_mo_max, i_ref
       TYPE(mo_set_type), DIMENSION(:), POINTER           :: mo_qs, mo_ref_temp
       TYPE(qs_kind_type), DIMENSION(:), POINTER          :: qs_kind_set
       TYPE(particle_type), DIMENSION(:), POINTER         :: particle_set
@@ -260,19 +257,18 @@ CONTAINS
       IF (proj_mo%ref_mo_index(1) == -1) THEN
          DEALLOCATE(proj_mo%ref_mo_index)
          ALLOCATE(proj_mo%ref_mo_index(nbr_mo_max))
-         DO i = 1, nbr_mo_max
-            proj_mo%ref_mo_index(i) = i
+         DO i_ref = 1, nbr_mo_max
+            proj_mo%ref_mo_index(i_ref) = i_ref
          END DO
       ELSE
-         DO i = 1, SIZE(proj_mo%ref_mo_index)
-              IF (proj_mo%ref_mo_index(i) > nbr_mo_max) &
+         DO i_ref = 1, SIZE(proj_mo%ref_mo_index)
+              IF (proj_mo%ref_mo_index(i_ref) > nbr_mo_max) &
                  CALL cp_abort(__LOCATION__, &
                      "The MO number available in the Reference SCF "// &
                      "is smaller than the MO number you have required in REF_MO_INDEX.")
          END DO
       END IF
       nbr_ref_mo = SIZE(proj_mo%ref_mo_index)
-      WRITE(*, *) 'proj_mo%ref_mo_index:', proj_mo%ref_mo_index
 
       IF (nbr_ref_mo > nbr_mo_max) &
          CALL cp_abort(__LOCATION__, &
@@ -363,9 +359,14 @@ CONTAINS
 
       IF (proj_mo%sum_on_all_ref) THEN
          ALLOCATE(sum_popu_ref(nbr_ref_td))
+         sum_popu_ref(:) = 0.0_dp
          DO i_ref = 1, nbr_ref_mo
             CALL compute_proj_mo(popu, phase, mos_new, proj_mo, i_ref)
             sum_popu_ref(:) = sum_popu_ref(:) + popu(:)
+            WRITE(*, *) 'popu(:)', popu
+            WRITE(*, *) 'sum_popu_ref(:)', sum_popu_ref
+            WRITE(*, *) 'SUM(sum_popu_ref)', SUM(sum_popu_ref)
+            WRITE(*, *) 'SUM(sum_popu_ref(:))', SUM(sum_popu_ref(:))
          END DO
          IF (proj_mo%sum_on_all_td) THEN
             CALL write_proj_mo(qs_env, print_mo_section, proj_mo, popu_tot=SUM(sum_popu_ref), n_proj=n_proj)
@@ -422,6 +423,7 @@ CONTAINS
 
 
       DO j_td = 1, nbr_ref_td
+         WRITE(*, *) 'j_td= ', j_td, 'proj_mo%td_mo_index(j_td)= ', proj_mo%td_mo_index(j_td)
          ! Real part of the projection:
          real_proj = 0.0_dp
          CALL cp_fm_to_fm(mos_new(2*spin_td-1), mo_coeff_temp, &
