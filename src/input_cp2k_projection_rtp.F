@@ -99,8 +99,8 @@ CONTAINS
       CALL keyword_release(keyword)
 
       CALL keyword_create(keyword, __LOCATION__, name="SUM_ON_ALL_REF", &
-            description="Set to .TRUE. in order to sum all the projection done over the required MO_REF_INDEX of this section. "// &
-                          "Only one file per MO_TD_INDEX will be generated.", &
+            description="Set to .TRUE. in order to sum all the projection done over the required MO_REF_INDEX for each TD MOs. "// &
+                          "Only one file will be generated containing the results for every MO_TD_INDEX.", &
                           usage="SUM_ON_ALL_REF .TRUE.", &
                           default_l_val=.FALSE., lone_keyword_l_val=.TRUE., &
                           repeats=.FALSE.)
@@ -109,8 +109,7 @@ CONTAINS
 
       CALL keyword_create(keyword, __LOCATION__, name="TD_MO_INDEX", &
                           description="Indexes of the time dependent MOs to project on the reference MOs. "// &
-                          "One file will be generated per index defined."// &
-                          "Set to -1 to project all the TD MOs at once (only one output file).", &
+                          "Set to -1 to project on all the TD MOs.", &
                           usage="MO_TD_INDEX 1 2", &
                           default_i_vals=(/1/), &
                           n_var=-1, type_of_var=integer_t, repeats=.FALSE.)
@@ -126,6 +125,18 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
       
+      CALL keyword_create(keyword, __LOCATION__, name="SUM_ON_ALL_TD", &
+            description="Set to .TRUE. in order to sum the projection done over all on TD MOs on the required MO_REF_INDEX. "// &
+                          "One file per MO_REF_INDEX will be generated."// &
+                          "Combining SUM_ON_ALL_TD and SUM_ON_ALL_REF lead to one file one projection: "// &
+                          "the population of all the defined TD_MO_INDEX over the reference MO_REF_INDEX per time step required.", &
+                          usage="SUM_ON_ALL_TD .TRUE.", &
+                          default_l_val=.FALSE., lone_keyword_l_val=.TRUE., &
+                          repeats=.FALSE.)
+      CALL section_add_keyword(section, keyword)
+      CALL keyword_release(keyword)
+
+
       ! The results for different time step are stored in the same file by default:
       CALL cp_print_key_section_create(subsection, __LOCATION__, name="PRINT", &
                                        description="How to print the MO projection", &

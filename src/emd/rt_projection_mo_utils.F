@@ -180,6 +180,9 @@ CONTAINS
           END DO
         END IF
 
+        CALL section_vals_val_get(proj_mo_section, "SUM_ON_ALL_TD", i_rep_section=i, &
+                                   l_val=proj_mo%sum_on_all_td)
+
       END DO 
 
    END SUBROUTINE init_mo_projection
@@ -316,7 +319,6 @@ CONTAINS
 ! **************************************************************************************************
 !> \brief Compute the projection of the current MO coefficients on reference ones
 !>        and write the results.
-!> \param  ... UNMATCHED_PROCEDURE_ARGUMENT: please check 
 !> \author Guillaume Le Breton
 ! **************************************************************************************************
    SUBROUTINE compute_and_write_proj_mo(qs_env, mos_new, proj_mo, n_proj)
@@ -325,54 +327,68 @@ CONTAINS
       TYPE(proj_mo_type)                                 :: proj_mo
       INTEGER                                            :: n_proj
       
-      INTEGER                                            :: i, nbr_ref_mo, nbr_ref_td
-      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: popu, phase
-      REAL(KIND=dp)                                      :: popu_tot
+      INTEGER                                            :: i_ref, nbr_ref_mo, nbr_ref_td
+      REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: popu, phase, sum_popu_ref
       TYPE(dft_control_type), POINTER                    :: dft_control
-      TYPE(section_vals_type), POINTER                   :: input, proj_mo_section
+      TYPE(section_vals_type), POINTER                   :: input, proj_mo_section, print_mo_section
       TYPE(cp_logger_type), POINTER                      :: logger
 
-      NULLIFY( dft_control, input, proj_mo_section, logger)
+      NULLIFY( dft_control, input, proj_mo_section, print_mo_section, logger)
       
       logger => cp_get_default_logger()
 
       CALL get_qs_env(qs_env, &
                dft_control=dft_control, &
                input=input)
-    
-      proj_mo_section => section_vals_get_subs_vals(input, "DFT%REAL_TIME_PROPAGATION%PRINT%PROJECTION_MO", i_rep_section=n_proj)
+      
+      ! The general section
+      proj_mo_section => section_vals_get_subs_vals(input, "DFT%REAL_TIME_PROPAGATION%PRINT%PROJECTION_MO") 
+      ! The section we are dealing in this particular subroutine call: n_proj. 
+      print_mo_section => section_vals_get_subs_vals(proj_mo_section, "PRINT", i_rep_section=n_proj)
 
       ! STOP if not the required time step
       IF (.NOT. BTEST(cp_print_key_should_output(logger%iter_info, &
-                                             proj_mo_section, "PRINT"), &
+                                             print_mo_section, ""), &
                                              cp_p_file)) &
          RETURN
-
+      
       IF (.NOT. dft_control%rtp_control%fixed_ions) &
            CALL cp_abort(__LOCATION__, &
                 "DFT%REAL_TIME_PROPAGATION%PRINT%PROJECTION_MO not implemented for EMD yet.")
 
       nbr_ref_mo = SIZE(proj_mo%ref_mo_index)
       nbr_ref_td = SIZE(proj_mo%td_mo_index)
-
       ALLOCATE(popu(nbr_ref_td))
       ALLOCATE(phase(nbr_ref_td))
-      DO i = 1, nbr_ref_mo
-         CALL compute_proj_mo(popu, phase, mos_new, proj_mo, i)
 
-         IF (proj_mo%sum_on_all_ref) THEN
-            popu_tot = SUM(popu)
-            CALL write_proj_mo(qs_env, proj_mo_section, proj_mo, i, popu_tot=popu_tot)
+      IF (proj_mo%sum_on_all_ref) THEN
+         ALLOCATE(sum_popu_ref(nbr_ref_td))
+         DO i_ref = 1, nbr_ref_mo
+            CALL compute_proj_mo(popu, phase, mos_new, proj_mo, i_ref)
+            sum_popu_ref(:) = sum_popu_ref(:) + popu(:)
+         END DO
+         IF (proj_mo%sum_on_all_td) THEN
+            CALL write_proj_mo(qs_env, print_mo_section, proj_mo, popu_tot=SUM(sum_popu_ref), n_proj=n_proj)
          ELSE
-
-            CALL write_proj_mo(qs_env, proj_mo_section, proj_mo, i, popu=popu, phase=phase)
+            CALL write_proj_mo(qs_env, print_mo_section, proj_mo, popu=sum_popu_ref, n_proj=n_proj)
          END IF
-      END DO
-      
+         DEALLOCATE(sum_popu_ref)
+      ELSE
+        DO i_ref = 1, nbr_ref_mo
+           CALL compute_proj_mo(popu, phase, mos_new, proj_mo, i_ref)
+         
+           IF (proj_mo%sum_on_all_td) THEN
+              CALL write_proj_mo(qs_env, print_mo_section, proj_mo, i_ref=i_ref, popu_tot=SUM(popu), n_proj=n_proj)
+           ELSE
+
+              CALL write_proj_mo(qs_env, print_mo_section, proj_mo, i_ref=i_ref, popu=popu, phase=phase, n_proj=n_proj)
+           END IF
+        END DO
+      END IF  
+
       DEALLOCATE(popu)
       DEALLOCATE(phase)
       
-
    END SUBROUTINE compute_and_write_proj_mo
 
 ! **************************************************************************************************
@@ -380,14 +396,14 @@ CONTAINS
 !> \param  ... 
 !> \author Guillaume Le Breton
 ! **************************************************************************************************
-   SUBROUTINE compute_proj_mo(popu, phase, mos_new, proj_mo, i)
+   SUBROUTINE compute_proj_mo(popu, phase, mos_new, proj_mo, i_ref)
       REAL(KIND=dp), DIMENSION(:), ALLOCATABLE           :: popu, phase
       TYPE(cp_fm_type), DIMENSION(:), POINTER            :: mos_new
       TYPE(proj_mo_type)                                 :: proj_mo
-      INTEGER                                            :: i, handle
+      INTEGER                                            :: i_ref
 
       CHARACTER(len=*), PARAMETER                        :: routineN = 'rt_compute_proj_mo'
-      INTEGER                                            :: j, nbr_ref_td, spin_td
+      INTEGER                                            :: j_td, nbr_ref_td, spin_td, handle
       REAL(KIND=dp)                                      :: real_proj, imag_proj
       TYPE(cp_fm_struct_type), POINTER                   :: mo_ref_fmstruct
       TYPE(cp_fm_type)                                   :: mo_coeff_temp
@@ -405,28 +421,28 @@ CONTAINS
       CALL cp_fm_create(mo_coeff_temp, mo_ref_fmstruct, 'mo_temp')
 
 
-      DO j = 1, nbr_ref_td
+      DO j_td = 1, nbr_ref_td
          ! Real part of the projection:
          real_proj = 0.0_dp
          CALL cp_fm_to_fm(mos_new(2*spin_td-1), mo_coeff_temp, &
                                 ncol=1, &
-                                source_start=proj_mo%td_mo_index(j), &
+                                source_start=proj_mo%td_mo_index(j_td), &
                                 target_start=1)
          
-         CALL cp_fm_trace(mo_coeff_temp, proj_mo%mo_ref(i), real_proj) 
+         CALL cp_fm_trace(mo_coeff_temp, proj_mo%mo_ref(i_ref), real_proj) 
 
          ! Imaginary part of the projection
          imag_proj = 0.0_dp
          CALL cp_fm_to_fm(mos_new(2*spin_td), mo_coeff_temp, &
                                 ncol=1, &
-                                source_start=proj_mo%td_mo_index(j), &
+                                source_start=proj_mo%td_mo_index(j_td), &
                                 target_start=1)
 
-         CALL cp_fm_trace(mo_coeff_temp, proj_mo%mo_ref(i), imag_proj)
+         CALL cp_fm_trace(mo_coeff_temp, proj_mo%mo_ref(i_ref), imag_proj)
          
          ! Store the result
-         phase(j) = ATAN2(imag_proj, real_proj) ! in radians
-         popu(j) = real_proj**2 + imag_proj**2
+         phase(j_td) = ATAN2(imag_proj, real_proj) ! in radians
+         popu(j_td) = real_proj**2 + imag_proj**2
 
       END DO
       
@@ -438,21 +454,22 @@ CONTAINS
    END SUBROUTINE compute_proj_mo
 
 ! **************************************************************************************************
-!> \brief Write the projection of the current MO coefficients on reference ones
+!> \brief Write in file the projection of the time-dependent MO coefficients on reference ones
 !> \param  ... 
 !> \author Guillaume Le Breton
 ! **************************************************************************************************
-   SUBROUTINE write_proj_mo(qs_env, proj_mo_section, proj_mo, i, popu, phase, popu_tot)
+   SUBROUTINE write_proj_mo(qs_env, print_mo_section, proj_mo, i_ref, popu, phase, popu_tot, n_proj)
       TYPE(qs_environment_type), POINTER                 :: qs_env
-      TYPE(section_vals_type), POINTER                   :: proj_mo_section
+      TYPE(section_vals_type), POINTER                   :: print_mo_section
       TYPE(proj_mo_type)                                 :: proj_mo
-      INTEGER                                            :: i 
 
+      INTEGER, OPTIONAL                                  :: i_ref 
       REAL(KIND=dp), DIMENSION(:), OPTIONAL              :: popu, phase
       REAL(KIND=dp), OPTIONAL                            :: popu_tot
+      INTEGER, OPTIONAL                                  :: n_proj
 
       CHARACTER(LEN=default_string_length)               :: filename, ext
-      INTEGER                                            :: output_unit, print_unit, j
+      INTEGER                                            :: output_unit, print_unit, j_td
       TYPE(cp_logger_type), POINTER                      :: logger
 
 
@@ -461,45 +478,67 @@ CONTAINS
       logger => cp_get_default_logger()
       output_unit = cp_logger_get_default_io_unit(logger)
 
-      IF (output_unit > 0) THEN
+      IF (.NOT. (output_unit > 0)) RETURN
+
+      IF (proj_mo%sum_on_all_ref) THEN
+         ext = "-"//TRIM(ACHAR(IACHAR('0') + n_proj))//"-ALL_REF.dat"
+      ELSE
          ! Filename is update wrt the reference MO number
-         ext = "-REF-"// &
-               TRIM(ACHAR(IACHAR('0') + proj_mo%ref_mo_index(i)))// &
-               ".dat"
-         print_unit = cp_print_key_unit_nr(logger, proj_mo_section, "PRINT", &
-                                           extension=TRIM(ext))
+         ext = "-"//TRIM(ACHAR(IACHAR('0') + n_proj))//&
+            "-REF-"// &
+            TRIM(ACHAR(IACHAR('0') + proj_mo%ref_mo_index(i_ref)))// &
+            ".dat"
+      END IF
 
-         IF (print_unit /= output_unit) THEN
-            INQUIRE (UNIT=print_unit, NAME=filename)
-            WRITE (UNIT=output_unit, FMT="(/,T2,A,2(/,T3,A),/)") &
-               "PROJECTION MO", "The projection of the TD MOs is done in the file:", &
-               TRIM(filename)
-            WRITE (UNIT=print_unit, FMT="(/,(T2,A,T40,I6))") &
-               "Real time propagation step:", qs_env%sim_step
+      print_unit = cp_print_key_unit_nr(logger, print_mo_section, "", &
+                                        extension=TRIM(ext))
+
+      IF (print_unit /= output_unit) THEN
+         INQUIRE (UNIT=print_unit, NAME=filename)
+         WRITE (UNIT=output_unit, FMT="(/,T2,A,2(/,T3,A),/)") &
+            "PROJECTION MO", "The projection of the TD MOs is done in the file:", &
+            TRIM(filename)
+         WRITE (UNIT=print_unit, FMT="(/,(T2,A,T40,I6))") &
+            "Real time propagation step:", qs_env%sim_step
+      ELSE
+         WRITE (UNIT=output_unit, FMT="(/,T2,A)") "PROJECTION MO"
+      END IF
+
+
+      IF (proj_mo%sum_on_all_ref) THEN
+        WRITE (print_unit, "(T3,A)") &
+            "Projection on all the required MO number from the reference file "// &
+            TRIM(proj_mo%ref_mo_file_name) 
+         IF (proj_mo%sum_on_all_td) THEN
+            WRITE (print_unit, "(T3, A, E16.8)") & 
+               "The sum over all the TD MOs population:", popu_tot
          ELSE
-            WRITE (UNIT=output_unit, FMT="(/,T2,A)") "PROJECTION MO"
+            WRITE (print_unit, "(T3,A)") &
+               "For each TD MOs required is printed: Population "
+            DO j_td = 1, SIZE(popu)
+               WRITE (print_unit, "(T5,1(E16.8, 1X))")  popu(j_td)
+            END DO 
          END IF
-
+      ELSE
          WRITE (print_unit, "(T3,A)") & 
             "Projection on the MO number "// &
-            TRIM(ACHAR(IACHAR('0') + proj_mo%ref_mo_index(i)))// &
+            TRIM(ACHAR(IACHAR('0') + proj_mo%ref_mo_index(i_ref)))// &
             " from the reference file "// &
             TRIM(proj_mo%ref_mo_file_name)
 
-         IF (proj_mo%sum_on_all_ref) THEN
+         IF (proj_mo%sum_on_all_td) THEN
             WRITE (print_unit, "(T3, A, E16.8)") & 
                "The sum over all the TD MOs population:", popu_tot
          ELSE
             WRITE (print_unit, "(T3,A)") &
                "For each TD MOs required is printed: Population & Phase [rad] "
-            DO j = 1, SIZE(popu)
-               WRITE (print_unit, "(T5,2(E16.8, E16.8, 1X))")  popu(j), phase(j)
+            DO j_td = 1, SIZE(popu)
+               WRITE (print_unit, "(T5,2(E16.8, E16.8, 1X))")  popu(j_td), phase(j_td)
             END DO 
          END IF
+      END IF
 
-         CALL cp_print_key_finished_output(print_unit, logger, proj_mo_section, "PRINT")
-
-      END IF 
+      CALL cp_print_key_finished_output(print_unit, logger, print_mo_section, "")
 
    END SUBROUTINE write_proj_mo
 

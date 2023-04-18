@@ -247,13 +247,6 @@ CONTAINS
                END IF
                IF (dft_control%rtp_control%is_proj_mo) THEN
                   DO n_proj = 1, SIZE(dft_control%rtp_control%proj_mo_list)
-                     WRITE(*, *) __LOCATION__, 'iter:', n_proj, 'size of the array:',  & 
-                        SIZE(dft_control%rtp_control%proj_mo_list)
-
-                     !IF (BTEST(cp_print_key_should_output(logger%iter_info, &
-                     !                            dft_section, &
-                     !                           "REAL_TIME_PROPAGATION%PRINT%PROJECTION_MO%PRINT"), & 
-                     !                           cp_p_file)) & 
                      CALL compute_and_write_proj_mo(qs_env, mos_new, &
                           dft_control%rtp_control%proj_mo_list(n_proj)%proj_mo, n_proj)
                   END DO 
