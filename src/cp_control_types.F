@@ -50,7 +50,7 @@ MODULE cp_control_types
       LOGICAL                                    :: sum_on_all_td
       CHARACTER(LEN=default_path_length)         :: ref_mo_file_name
       TYPE(cp_fm_type), DIMENSION(:), &
-               ALLOCATABLE                       :: mo_ref
+         ALLOCATABLE                       :: mo_ref
    END TYPE proj_mo_type
 
    TYPE proj_mo_p_type
@@ -86,8 +86,8 @@ MODULE cp_control_types
       REAL(KIND=dp), DIMENSION(3)          :: vec_pot
       LOGICAL                              :: nl_gauge_transform
       LOGICAL                              :: is_proj_mo
-      TYPE(proj_mo_p_type), DIMENSION(:),&
-                    POINTER                :: proj_mo_list => NULL()
+      TYPE(proj_mo_p_type), DIMENSION(:), &
+         POINTER                :: proj_mo_list => NULL()
    END TYPE rtp_control_type
 ! **************************************************************************************************
 ! \brief Control parameters for DFTB calculations
@@ -953,10 +953,9 @@ CONTAINS
       CALL timestop(handle)
    END SUBROUTINE tddfpt2_control_release
 
-
 ! **************************************************************************************************
 !> \brief ...
-!> \param efield_fields ...
+!> \param proj_mo_list ...
 ! **************************************************************************************************
    SUBROUTINE proj_mo_list_release(proj_mo_list)
       TYPE(proj_mo_p_type), DIMENSION(:), POINTER        :: proj_mo_list
@@ -972,7 +971,7 @@ CONTAINS
                   DO mo_ref_nbr = 1, SIZE(proj_mo_list(i)%proj_mo%mo_ref)
                      CALL cp_fm_release(proj_mo_list(i)%proj_mo%mo_ref(mo_ref_nbr))
                   END DO
-                  DEALLOCATE(proj_mo_list(i)%proj_mo%mo_ref)
+                  DEALLOCATE (proj_mo_list(i)%proj_mo%mo_ref)
                END IF
                IF (ALLOCATED(proj_mo_list(i)%proj_mo%td_mo_index)) &
                   DEALLOCATE (proj_mo_list(i)%proj_mo%td_mo_index)

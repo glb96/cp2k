@@ -21,8 +21,7 @@ MODULE input_cp2k_projection_rtp
                                               section_create,&
                                               section_release,&
                                               section_type
-   USE input_val_types,                 ONLY: integer_t,&
-                                              lchar_t
+   USE input_val_types,                 ONLY: integer_t
    USE string_utilities,                ONLY: s2a
 #include "./base/base_uses.f90"
 
@@ -94,7 +93,7 @@ CONTAINS
                           usage="MO_TD_SPIN 1", &
                           default_i_val=1, &
                           n_var=1, type_of_var=integer_t, repeats=.FALSE.)
-                          
+
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
@@ -124,9 +123,9 @@ CONTAINS
                           n_var=1, type_of_var=integer_t)
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
-      
+
       CALL keyword_create(keyword, __LOCATION__, name="SUM_ON_ALL_TD", &
-            description="Set to .TRUE. in order to sum the projection done over all on TD MOs on the required MO_REF_INDEX. "// &
+               description="Set to .TRUE. in order to sum the projection done over all on TD MOs on the required MO_REF_INDEX. "// &
                           "One file per MO_REF_INDEX will be generated."// &
                           "Combining SUM_ON_ALL_TD and SUM_ON_ALL_REF lead to one file one projection: "// &
                           "the population of all the defined TD_MO_INDEX over the reference MO_REF_INDEX per time step required.", &
@@ -136,11 +135,10 @@ CONTAINS
       CALL section_add_keyword(section, keyword)
       CALL keyword_release(keyword)
 
-
       ! The results for different time step are stored in the same file by default:
       CALL cp_print_key_section_create(subsection, __LOCATION__, name="PRINT", &
                                        description="How to print the MO projection", &
-                                       common_iter_levels=999999999, & 
+                                       common_iter_levels=999999999, &
                                        filename="PROJ_MO")
       CALL section_add_subsection(section, subsection)
       CALL section_release(subsection)

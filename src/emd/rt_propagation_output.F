@@ -116,7 +116,8 @@ CONTAINS
       INTEGER, INTENT(in)                                :: run_type
       REAL(dp), INTENT(in), OPTIONAL                     :: delta_iter, used_time
 
-      INTEGER                                            :: n_proj, n_electrons, nspin, output_unit, spin
+      INTEGER                                            :: n_electrons, n_proj, nspin, output_unit, &
+                                                            spin
       REAL(dp)                                           :: orthonormality, tot_rho_r
       REAL(KIND=dp), DIMENSION(:), POINTER               :: qs_tot_rho_r
       TYPE(atomic_kind_type), DIMENSION(:), POINTER      :: atomic_kind_set
@@ -248,8 +249,8 @@ CONTAINS
                IF (dft_control%rtp_control%is_proj_mo) THEN
                   DO n_proj = 1, SIZE(dft_control%rtp_control%proj_mo_list)
                      CALL compute_and_write_proj_mo(qs_env, mos_new, &
-                          dft_control%rtp_control%proj_mo_list(n_proj)%proj_mo, n_proj)
-                  END DO 
+                                                    dft_control%rtp_control%proj_mo_list(n_proj)%proj_mo, n_proj)
+                  END DO
                END IF
             END IF
             CALL write_rt_mos_to_restart(qs_env%mos, mos_new, particle_set, &

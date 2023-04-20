@@ -2282,12 +2282,12 @@ CONTAINS
       tmp_section => section_vals_get_subs_vals(rtp_section, "PRINT%PROJECTION_MO")
       CALL section_vals_get(tmp_section, explicit=is_present)
       IF (is_present) THEN
-         IF (dft_control%rtp_control%linear_scaling) & 
-             CALL cp_abort(__LOCATION__, &
-             "You have defined a time dependent projection of mos, but "// &
-             " only the density matrix is propagated (DENSITY_PROPAGATION "// &
-             ".TRUE.). Please either use MO-based real time DFT or do not "// &
-             "define any PRINT%PROJECTION_MO section")
+         IF (dft_control%rtp_control%linear_scaling) &
+            CALL cp_abort(__LOCATION__, &
+                          "You have defined a time dependent projection of mos, but "// &
+                          " only the density matrix is propagated (DENSITY_PROPAGATION "// &
+                          ".TRUE.). Please either use MO-based real time DFT or do not "// &
+                          "define any PRINT%PROJECTION_MO section")
          dft_control%rtp_control%is_proj_mo = .TRUE.
       ELSE
          dft_control%rtp_control%is_proj_mo = .FALSE.

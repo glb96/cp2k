@@ -26,7 +26,8 @@ MODULE rt_projection_mo_utils
    USE cp_log_handling,                 ONLY: cp_get_default_logger,&
                                               cp_logger_get_default_io_unit,&
                                               cp_logger_get_default_unit_nr,&
-                                              cp_logger_type
+                                              cp_logger_type,&
+                                              cp_to_string
    USE cp_output_handling,              ONLY: cp_iter_string,&
                                               cp_p_file,&
                                               cp_print_key_finished_output,&
@@ -192,8 +193,11 @@ CONTAINS
 
 ! **************************************************************************************************
 !> \brief Read the MO from .wfn file and store the required mos for TD projections
-!> \param  qs_env...
-!> \param  proj_mo...
+!> \param qs_env ...
+!> \param proj_mo ...
+!> \param xas_ref ...
+!> \param  proj_mo... UNMATCHED_PROCEDURE_ARGUMENT: please check 
+!> \param  qs_env... UNMATCHED_PROCEDURE_ARGUMENT: please check 
 !> \author Guillaume Le Breton (04.2023)
 ! **************************************************************************************************
    SUBROUTINE read_reference_mo_from_wfn(qs_env, proj_mo, xas_ref)
@@ -337,6 +341,10 @@ CONTAINS
 ! **************************************************************************************************
 !> \brief Compute the projection of the current MO coefficients on reference ones
 !>        and write the results.
+!> \param qs_env ...
+!> \param mos_new ...
+!> \param proj_mo ...
+!> \param n_proj ...
 !> \author Guillaume Le Breton
 ! **************************************************************************************************
    SUBROUTINE compute_and_write_proj_mo(qs_env, mos_new, proj_mo, n_proj)
@@ -412,7 +420,12 @@ CONTAINS
 
 ! **************************************************************************************************
 !> \brief Compute the projection of the current MO coefficients on reference ones
-!> \param  ... 
+!> \param popu ...
+!> \param phase ...
+!> \param mos_new ...
+!> \param proj_mo ...
+!> \param i_ref ...
+!> \param  ...  UNMATCHED_PROCEDURE_ARGUMENT: please check 
 !> \author Guillaume Le Breton
 ! **************************************************************************************************
    SUBROUTINE compute_proj_mo(popu, phase, mos_new, proj_mo, i_ref)
@@ -473,8 +486,17 @@ CONTAINS
    END SUBROUTINE compute_proj_mo
 
 ! **************************************************************************************************
-!> \brief Write in file the projection of the time-dependent MO coefficients on reference ones
-!> \param  ... 
+!> \brief Write in one file the projection of (all) the time-dependent MO coefficients 
+!>        on one reference ones
+!> \param qs_env ...
+!> \param print_mo_section ...
+!> \param proj_mo ...
+!> \param i_ref ...
+!> \param popu ...
+!> \param phase ...
+!> \param popu_tot ...
+!> \param n_proj ...
+!> \param  ...  UNMATCHED_PROCEDURE_ARGUMENT: please check 
 !> \author Guillaume Le Breton
 ! **************************************************************************************************
    SUBROUTINE write_proj_mo(qs_env, print_mo_section, proj_mo, i_ref, popu, phase, popu_tot, n_proj)
@@ -500,12 +522,12 @@ CONTAINS
       IF (.NOT. (output_unit > 0)) RETURN
 
       IF (proj_mo%sum_on_all_ref) THEN
-         ext = "-"//TRIM(ACHAR(IACHAR('0') + n_proj))//"-ALL_REF.dat"
+         ext = "-"//TRIM(ADJUSTL(cp_to_string(n_proj)))//"-ALL_REF.dat"
       ELSE
          ! Filename is update wrt the reference MO number
-         ext = "-"//TRIM(ACHAR(IACHAR('0') + n_proj))//&
+         ext = "-"//TRIM(ADJUSTL(cp_to_string(n_proj)))//&
             "-REF-"// &
-            TRIM(ACHAR(IACHAR('0') + proj_mo%ref_mo_index(i_ref)))// &
+            TRIM(ADJUSTL(cp_to_string(proj_mo%ref_mo_index(i_ref))))// &
             ".dat"
       END IF
 
@@ -541,7 +563,7 @@ CONTAINS
       ELSE
          WRITE (print_unit, "(T3,A)") & 
             "Projection on the MO number "// &
-            TRIM(ACHAR(IACHAR('0') + proj_mo%ref_mo_index(i_ref)))// &
+            TRIM(ADJUSTL(cp_to_string(proj_mo%ref_mo_index(i_ref))))// &
             " from the reference file "// &
             TRIM(proj_mo%ref_mo_file_name)
 

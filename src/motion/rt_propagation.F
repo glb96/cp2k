@@ -174,7 +174,7 @@ CONTAINS
 
       ! Setup the MO projection environment if required
       IF (rtp_control%is_proj_mo) CALL init_mo_projection(qs_env, rtp_control)
-      
+
       CALL init_propagation_run(qs_env)
       IF (.NOT. rtp_control%fixed_ions) THEN
          !derivativs of the overlap needed for EMD
