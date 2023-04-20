@@ -953,6 +953,36 @@ CONTAINS
       CALL timestop(handle)
    END SUBROUTINE tddfpt2_control_release
 
+
+! **************************************************************************************************
+!> \brief ...
+!> \param efield_fields ...
+! **************************************************************************************************
+   SUBROUTINE proj_mo_list_release(proj_mo_list)
+      TYPE(proj_mo_p_type), DIMENSION(:), POINTER        :: proj_mo_list
+
+      INTEGER                                            :: i, mo_ref_nbr
+
+      IF (ASSOCIATED(proj_mo_list)) THEN
+         DO i = 1, SIZE(proj_mo_list)
+            IF (ASSOCIATED(proj_mo_list(i)%proj_mo)) THEN
+               IF (ALLOCATED(proj_mo_list(i)%proj_mo%ref_mo_index)) &
+                  DEALLOCATE (proj_mo_list(i)%proj_mo%ref_mo_index)
+               IF (ALLOCATED(proj_mo_list(i)%proj_mo%mo_ref)) THEN
+                  DO mo_ref_nbr = 1, SIZE(proj_mo_list(i)%proj_mo%mo_ref)
+                     CALL cp_fm_release(proj_mo_list(i)%proj_mo%mo_ref(mo_ref_nbr))
+                  END DO
+                  DEALLOCATE(proj_mo_list(i)%proj_mo%mo_ref)
+               END IF
+               IF (ALLOCATED(proj_mo_list(i)%proj_mo%td_mo_index)) &
+                  DEALLOCATE (proj_mo_list(i)%proj_mo%td_mo_index)
+               DEALLOCATE (proj_mo_list(i)%proj_mo)
+            END IF
+         END DO
+         DEALLOCATE (proj_mo_list)
+      END IF
+   END SUBROUTINE proj_mo_list_release
+
 ! **************************************************************************************************
 !> \brief ...
 !> \param proj_mo_list ...

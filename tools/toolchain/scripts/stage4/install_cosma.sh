@@ -6,10 +6,10 @@
 [ "${BASH_SOURCE[0]}" ] && SCRIPT_NAME="${BASH_SOURCE[0]}" || SCRIPT_NAME=$0
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_NAME")/.." && pwd -P)"
 
-cosma_ver="2.6.5"
-cosma_sha256="10d9b7ecc1ce44ec5b9e0c0bf89278a63029912ec3ea99661be8576b553ececf"
-costa_ver="2.2"
-costa_sha256="3e7333f012af76ec3508276ea90800313f6136504667021fe229e710bf6acdc7"
+cosma_ver="2.6.6"
+cosma_sha256="e54caf70c154b5d94eeee6f9f7faac51bc21030e0b0b4f1f63d01e885faeade4"
+costa_ver="2.2.1"
+costa_sha256="aa8aa2a4a79de094f857c22293825de270ff72becd6bd736ff9f2dd8c192446d"
 tiled_mm_ver="2.2"
 tiled_mm_sha256="6d0b49c9588ece744166822fd44a7bc5bec3dc666b836de8bf4bf1a7bb675aac"
 
@@ -66,7 +66,7 @@ case "$with_cosma" in
           ;;
       esac
 
-      cd "COSTA-2.2"
+      cd "COSTA-${costa_ver}"
       [ -d build-cpu ] && rm -Rf build-cpu
       mkdir build-cpu && cd build-cpu
       cmake \
@@ -75,7 +75,7 @@ case "$with_cosma" in
         -DCMAKE_BUILD_TYPE="RelWithDebInfo" \
         -DBUILD_SHARED_LIBS=NO \
         -DCOSTA_BLAS=${cosma_blas} \
-        -DCOTMA_SCALAPACK=${cosma_sl} \
+        -DCOSTA_SCALAPACK=${cosma_sl} \
         .. > cmake.log 2>&1 || tail -n ${LOG_LINES} cmake.log
       make -j $(get_nprocs) > make.log 2>&1 || tail -n ${LOG_LINES} make.log
       make -j install > install.log 2>&1 || tail -n ${LOG_LINES} install.log
@@ -90,7 +90,7 @@ case "$with_cosma" in
           -DCMAKE_BUILD_TYPE="RelWithDebInfo" \
           -DBUILD_SHARED_LIBS=NO \
           -DCOSTA_BLAS=${cosma_blas} \
-          -DCOTMA_SCALAPACK=${cosma_sl} \
+          -DCOSTA_SCALAPACK=${cosma_sl} \
           .. > cmake.log 2>&1 || tail -n ${LOG_LINES} cmake.log
         make -j $(get_nprocs) > make.log 2>&1 || tail -n ${LOG_LINES} make.log
         make -j install > install.log 2>&1 || tail -n ${LOG_LINES} install.log
@@ -106,7 +106,7 @@ case "$with_cosma" in
           -DCMAKE_BUILD_TYPE="RelWithDebInfo" \
           -DBUILD_SHARED_LIBS=NO \
           -DCOSTA_BLAS=${cosma_blas} \
-          -DCOTMA_SCALAPACK=${cosma_sl} \
+          -DCOSTA_SCALAPACK=${cosma_sl} \
           .. > cmake.log 2>&1 || tail -n ${LOG_LINES} cmake.log
         make -j $(get_nprocs) > make.log 2>&1 || tail -n ${LOG_LINES} make.log
         make -j install > install.log 2>&1 || tail -n ${LOG_LINES} install.log
@@ -114,7 +114,7 @@ case "$with_cosma" in
       fi
       cd ..
 
-      cd Tiled-MM-2.2
+      cd Tiled-MM-${tiled_mm_ver}
       if [ "$ENABLE_CUDA" = "__TRUE__" ]; then
         mkdir build-cuda && cd build-cuda
         cmake \
@@ -148,7 +148,7 @@ case "$with_cosma" in
       fi
       cd ..
 
-      cd COSMA-2.6.5 && mkdir build-cpu && cd build-cpu
+      cd COSMA-${cosma_ver} && mkdir build-cpu && cd build-cpu
       cmake \
         -DCMAKE_INSTALL_PREFIX="${pkg_install_dir}" \
         -DCMAKE_INSTALL_LIBDIR=lib \
